@@ -1,5 +1,4 @@
 // server.js
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -8,9 +7,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const {
   default: makeWASocket,
-  fetchLatestBaileysVersion,
-  isJidPairing,
-  jidNormalizedUser
+  fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 const admin = require('firebase-admin');
 const QRCode = require('qrcode');
@@ -25,7 +22,7 @@ try {
     serviceAccount = require('./firebase-service-account.json');
   }
 } catch (error) {
-  console.error("Erreur Firebase: Impossible de charger le compte de service. Assurez-vous que le fichier ou la variable d'environnement est correct.", error);
+  console.error("Erreur Firebase: Impossible de charger le compte de service.", error);
   process.exit(1);
 }
 
@@ -36,7 +33,7 @@ const db = admin.firestore();
 
 // --- Express ---
 const app = express();
-const port = process.env.env || 3000;
+const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
@@ -47,104 +44,78 @@ const io = new Server(server, { cors: { origin: "*" } });
 
 // --- Authentification Baileys depuis Firestore ---
 async function getAuthFromFirestore(sessionId) {
-  const sessionDocRef = db.collection('artifacts').doc('tda').collection('users').doc(sessionId).collection('sessions').doc(sessionId);
-  
-  let creds;
+  const sessionDocRef = db.collection('sessions').doc(sessionId);
 
+  let creds = {};
   try {
     const doc = await sessionDocRef.get();
     if (doc.exists) {
       creds = doc.data();
-      console.log(`[Firestore] Fichier de session trouvé pour: ${sessionId}`);
+      console.log(`[Firestore] Session trouvée pour: ${sessionId}`);
     } else {
-      console.log(`[Firestore] Nouveau fichier de session créé pour: ${sessionId}. Initialisation des identifiants.`);
-      creds = {}; // Initialise l'objet creds s'il n'existe pas
+      console.log(`[Firestore] Nouvelle session pour: ${sessionId}`);
     }
   } catch (error) {
-    console.error(`[Firestore] Erreur lors de la récupération du document de session: ${error}`);
-    // En cas d'erreur de récupération, on s'assure que creds est un objet vide pour permettre la nouvelle session
-    creds = {};
-  }
-  
-  // Correction: assurez-vous que la structure de l'objet creds est toujours valide pour Baileys
-  if (!creds || !creds.signedIdentityKey || !creds.signedPreKey) {
-    creds = {
-      ...creds,
-      signedIdentityKey: creds.signedIdentityKey || {},
-      signedPreKey: creds.signedPreKey || {}
-    };
+    console.error(`[Firestore] Erreur récupération session: ${error}`);
   }
 
   const saveCreds = async (newCreds) => {
-    Object.assign(creds, newCreds);
     try {
-      await sessionDocRef.set(creds);
-      console.log(`[Firestore] Données de connexion mises à jour pour la session : ${sessionId}`);
+      await sessionDocRef.set(newCreds);
+      console.log(`[Firestore] Données de connexion sauvegardées: ${sessionId}`);
     } catch (error) {
-      console.error(`[Firestore] Erreur lors de la sauvegarde du document de session: ${error}`);
+      console.error(`[Firestore] Erreur sauvegarde: ${error}`);
     }
   };
 
-  return { state: { creds, saveCreds } };
+  return { creds, saveCreds };
 }
 
 async function startBaileysSession(sessionId, connectionType, phoneNumber) {
   try {
     const authState = await getAuthFromFirestore(sessionId);
-    if (!authState || !authState.state) {
-      io.to(sessionId).emit('error', 'Échec de l\'initialisation de l\'authentification.');
-      return null;
-    }
-
     const { version } = await fetchLatestBaileysVersion();
-    console.log(`[Baileys] Version: ${version}. Initialisation de la session.`);
+    console.log(`[Baileys] Version: ${version}. Initialisation.`);
 
     const sock = makeWASocket({
       version,
       logger: pino({ level: 'info' }),
       printQRInTerminal: false,
-      auth: authState.state,
-      browser: ['Ubuntu Linux', 'Chrome', '1.0'],
-      mobile: false
+      auth: authState,
+      browser: ['Ubuntu Linux', 'Chrome', '1.0']
     });
 
-    sock.ev.on('creds.update', authState.state.saveCreds);
+    sock.ev.on('creds.update', authState.saveCreds);
 
+    // QR code
     if (connectionType === 'qr') {
       sock.ev.on('connection.update', (update) => {
-        const { qr } = update;
-        if (qr) {
-          QRCode.toDataURL(qr, (err, url) => {
-            if (err) {
-              return io.to(sessionId).emit('error', 'Erreur génération QR code.');
-            }
+        if (update.qr) {
+          QRCode.toDataURL(update.qr, (err, url) => {
+            if (err) return io.to(sessionId).emit('error', 'Erreur QR code.');
             io.to(sessionId).emit('qrCode', url);
-            console.log(`[Baileys] QR code généré pour session ID: ${sessionId}`);
+            console.log(`[Baileys] QR code généré pour: ${sessionId}`);
           });
         }
       });
-    } else if (connectionType === 'pairing') {
-      if (phoneNumber && isJidPairing(sock.user?.id)) {
-        console.log(`[Baileys] Tentative de connexion avec le code d'appariement pour: ${phoneNumber}`);
-        const code = await sock.requestPairingCode(phoneNumber);
-        io.to(sessionId).emit('pairingCode', code);
-        console.log(`[Baileys] Code d'appariement généré: ${code} pour session ID: ${sessionId}`);
-      } else {
-        io.to(sessionId).emit('error', 'Connexion impossible. Ce n\'est pas une session de jumelage ou le numéro de téléphone est manquant.');
-      }
+    }
+
+    // Pairing code
+    if (connectionType === 'pairing' && phoneNumber) {
+      const code = await sock.requestPairingCode(phoneNumber);
+      io.to(sessionId).emit('pairingCode', code);
+      console.log(`[Baileys] Code d'appariement généré: ${code} pour: ${sessionId}`);
     }
 
     sock.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect } = update;
-      if (connection === 'open') {
+      if (update.connection === 'open') {
         io.to(sessionId).emit('connected', 'Bot connecté avec succès!');
-        console.log(`[Baileys] Connexion ouverte pour session ID: ${sessionId}`);
+        console.log(`[Baileys] Connexion ouverte: ${sessionId}`);
       }
-
-      if (connection === 'close') {
-        const reason = lastDisconnect?.error?.output?.payload?.message || "Erreur inconnue";
+      if (update.connection === 'close') {
+        const reason = update.lastDisconnect?.error?.output?.payload?.message || "Erreur inconnue";
         io.to(sessionId).emit('error', `Connexion fermée: ${reason}`);
-        console.error(`[Baileys] Connexion fermée pour session ID: ${sessionId}. Raison:`, lastDisconnect?.error);
+        console.error(`[Baileys] Connexion fermée pour: ${sessionId}`, update.lastDisconnect?.error);
         sock?.end();
       }
     });
@@ -153,7 +124,7 @@ async function startBaileysSession(sessionId, connectionType, phoneNumber) {
 
   } catch (e) {
     console.error('[Erreur serveur Baileys]', e);
-    io.to(sessionId).emit('error', 'Erreur lors de l’initialisation de la session. Veuillez réessayer.');
+    io.to(sessionId).emit('error', 'Erreur lors de l’initialisation de la session.');
     return null;
   }
 }
@@ -167,29 +138,25 @@ io.on('connection', (socket) => {
   socket.on('startQR', async () => {
     const sessionId = uuidv4();
     socket.join(sessionId);
-    console.log(`[Socket.IO] 'startQR' reçu. Génération de la session ID: ${sessionId}`);
+    console.log(`[Socket.IO] 'startQR' reçu. Session: ${sessionId}`);
     if (activeSessions.has(sessionId)) {
       activeSessions.get(sessionId)?.end();
       activeSessions.delete(sessionId);
     }
     const sock = await startBaileysSession(sessionId, 'qr');
-    if (sock) {
-      activeSessions.set(sessionId, sock);
-    }
+    if (sock) activeSessions.set(sessionId, sock);
   });
 
   socket.on('startPairingCode', async ({ phoneNumber }) => {
     const sessionId = uuidv4();
     socket.join(sessionId);
-    console.log(`[Socket.IO] 'startPairingCode' reçu. Génération de la session ID: ${sessionId}`);
+    console.log(`[Socket.IO] 'startPairingCode' reçu. Session: ${sessionId}`);
     if (activeSessions.has(sessionId)) {
       activeSessions.get(sessionId)?.end();
       activeSessions.delete(sessionId);
     }
     const sock = await startBaileysSession(sessionId, 'pairing', phoneNumber);
-    if (sock) {
-      activeSessions.set(sessionId, sock);
-    }
+    if (sock) activeSessions.set(sessionId, sock);
   });
 
   socket.on('disconnect', () => {
@@ -198,7 +165,7 @@ io.on('connection', (socket) => {
       if (!socketsInRoom || socketsInRoom.size === 0) {
         sock?.end();
         activeSessions.delete(sessionId);
-        console.log(`Session Baileys fermée en raison de la déconnexion du client pour l'ID: ${sessionId}`);
+        console.log(`Session fermée (déconnexion client): ${sessionId}`);
       }
     }
     console.log(`Client déconnecté: ${socket.id}`);
@@ -209,4 +176,3 @@ io.on('connection', (socket) => {
 server.listen(port, () => {
   console.log(`Serveur TDA d’appariement démarré sur le port ${port}`);
 });
-
