@@ -33,7 +33,7 @@ const db = admin.firestore();
 
 // --- Express ---
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
@@ -92,7 +92,7 @@ io.on('connection', (socket) => {
         }
         try {
           console.log('[Baileys] Demande de code de jumelage pour le numéro: ', phoneNumber);
-          const code = await sock.requestPairingCode(phoneNumber);
+          const code = await sock.pairPhone(phoneNumber);
           console.log(`[Baileys] Code de jumelage généré: ${code}`);
           socket.emit('pairingCode', code);
         } catch (err) {
