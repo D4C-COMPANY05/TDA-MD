@@ -122,6 +122,11 @@ io.on('connection', (socket) => {
           console.log('[Connexion] Bot connecté avec succès!');
           socket.emit('connected', 'Bot connecté avec succès!');
         }
+        // Gérer les cas d'échec de connexion
+        if (connection === 'close') {
+          console.log('[Baileys] Connexion fermée. Raison: ', update.lastDisconnect.error);
+          socket.emit('error', `La connexion a été fermée: ${update.lastDisconnect.error?.output?.payload?.message || "Erreur inconnue"}`);
+        }
       });
 
     } catch (e) {
