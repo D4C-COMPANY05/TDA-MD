@@ -1,178 +1,199 @@
 // server.js
-require('dotenv').config();
+
+// Définir la gestion des rejets non gérés pour attraper les erreurs non capturées
+process.on('unhandledRejection', console.dir);
+
+// Importation des modules nécessaires
 const express = require('express');
+const http = require('http');
+const socketIO = require('socket.io');
 const cors = require('cors');
 const pino = require('pino');
-const http = require('http');
-const { Server } = require('socket.io');
-const {
-  default: makeWASocket,
-  fetchLatestBaileysVersion
-} = require('@whiskeysockets/baileys');
+const qrcode = require('qrcode');
+const { getFirestore, doc, getDoc, setDoc } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
-const QRCode = require('qrcode');
 const { v4: uuidv4 } = require('uuid');
 
-// --- Firebase ---
-let serviceAccount;
-try {
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-  } else {
-    serviceAccount = require('./firebase-service-account.json');
-  }
-} catch (error) {
-  console.error("Erreur Firebase: Impossible de charger le compte de service.", error);
-  process.exit(1);
-}
+// Importation des fonctions de Baileys
+const {
+  default: makeWASocket,
+  fetchLatestBaileysVersion,
+  DisconnectReason,
+  Browsers
+} = require('@whiskeysockets/baileys');
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
-const db = admin.firestore();
+// Chargement des variables d'environnement depuis le fichier .env
+require('dotenv').config();
 
-// --- Express ---
+// Initialisation de l'application Express et du serveur HTTP
 const app = express();
-const port = process.env.PORT || 3000;
+const server = http.createServer(app);
+const io = socketIO(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  }
+});
+
 app.use(cors());
-app.use(express.json());
 app.use(express.static('public'));
 
-// --- HTTP + Socket.IO ---
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
-
-// --- Authentification Baileys depuis Firestore ---
-async function getAuthFromFirestore(sessionId) {
-  const sessionDocRef = db.collection('sessions').doc(sessionId);
-
-  let creds = {};
+// Initialisation de Firebase Admin SDK
+if (!admin.apps.length) {
   try {
-    const doc = await sessionDocRef.get();
-    if (doc.exists) {
-      creds = doc.data();
-      console.log(`[Firestore] Session trouvée pour: ${sessionId}`);
-    } else {
-      console.log(`[Firestore] Nouvelle session pour: ${sessionId}`);
-    }
+    admin.initializeApp({
+      credential: admin.credential.cert({
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+        privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+      }),
+    });
   } catch (error) {
-    console.error(`[Firestore] Erreur récupération session: ${error}`);
-  }
-
-  const saveCreds = async (newCreds) => {
-    try {
-      await sessionDocRef.set(newCreds);
-      console.log(`[Firestore] Données de connexion sauvegardées: ${sessionId}`);
-    } catch (error) {
-      console.error(`[Firestore] Erreur sauvegarde: ${error}`);
-    }
-  };
-
-  return { creds, saveCreds };
-}
-
-async function startBaileysSession(sessionId, connectionType, phoneNumber) {
-  try {
-    const authState = await getAuthFromFirestore(sessionId);
-    const { version } = await fetchLatestBaileysVersion();
-    console.log(`[Baileys] Version: ${version}. Initialisation.`);
-
-    const sock = makeWASocket({
-      version,
-      logger: pino({ level: 'info' }),
-      printQRInTerminal: false,
-      auth: authState,
-      browser: ['Ubuntu Linux', 'Chrome', '1.0']
-    });
-
-    sock.ev.on('creds.update', authState.saveCreds);
-
-    // QR code
-    if (connectionType === 'qr') {
-      sock.ev.on('connection.update', (update) => {
-        if (update.qr) {
-          QRCode.toDataURL(update.qr, (err, url) => {
-            if (err) return io.to(sessionId).emit('error', 'Erreur QR code.');
-            io.to(sessionId).emit('qrCode', url);
-            console.log(`[Baileys] QR code généré pour: ${sessionId}`);
-          });
-        }
-      });
-    }
-
-    // Pairing code
-    if (connectionType === 'pairing' && phoneNumber) {
-      const code = await sock.requestPairingCode(phoneNumber);
-      io.to(sessionId).emit('pairingCode', code);
-      console.log(`[Baileys] Code d'appariement généré: ${code} pour: ${sessionId}`);
-    }
-
-    sock.ev.on('connection.update', (update) => {
-      if (update.connection === 'open') {
-        io.to(sessionId).emit('connected', 'Bot connecté avec succès!');
-        console.log(`[Baileys] Connexion ouverte: ${sessionId}`);
-      }
-      if (update.connection === 'close') {
-        const reason = update.lastDisconnect?.error?.output?.payload?.message || "Erreur inconnue";
-        io.to(sessionId).emit('error', `Connexion fermée: ${reason}`);
-        console.error(`[Baileys] Connexion fermée pour: ${sessionId}`, update.lastDisconnect?.error);
-        sock?.end();
-      }
-    });
-
-    return sock;
-
-  } catch (e) {
-    console.error('[Erreur serveur Baileys]', e);
-    io.to(sessionId).emit('error', 'Erreur lors de l’initialisation de la session.');
-    return null;
+    console.error("Erreur Firebase: impossible d'initialiser le SDK.", error);
+    process.exit(1);
   }
 }
 
-// --- Gestion des connexions Socket.IO ---
+const db = getFirestore();
+
+// Map pour stocker les sessions actives par ID de session
 const activeSessions = new Map();
 
+// Fonction pour récupérer l'état d'authentification et les fonctions de sauvegarde
+const getAuthFromFirestore = async (sessionId) => {
+    const sessionDocRef = doc(db, 'artifacts', 'tda', 'users', sessionId, 'sessions', sessionId);
+    let creds;
+
+    try {
+        const docSnap = await getDoc(sessionDocRef);
+        if (docSnap.exists()) {
+            // Si le document existe, on récupère les données
+            creds = docSnap.data();
+            console.log(`[Firestore] Session trouvée pour l'ID : ${sessionId}`);
+        } else {
+            // Si le document n'existe pas, on initialise un objet d'authentification vide
+            // avec la structure minimale requise par Baileys
+            console.log(`[Firestore] Nouvelle session. Initialisation des identifiants.`);
+            creds = {
+                noiseKey: {},
+                identityKey: {},
+                signedPreKey: {},
+                signedIdentityKey: {}
+            };
+        }
+    } catch (error) {
+        console.error(`[Firestore] Erreur lors de la récupération du document de session: ${error}`);
+        // En cas d'erreur de récupération, on retourne une structure vide pour que Baileys puisse la générer
+        creds = {
+            noiseKey: {},
+            identityKey: {},
+            signedPreKey: {},
+            signedIdentityKey: {}
+        };
+    }
+
+    // Fonction pour sauvegarder les mises à jour des credentials
+    const saveCreds = async (newCreds) => {
+        Object.assign(creds, newCreds);
+        try {
+            // Baileys utilise des objets Buffer, il faut les convertir
+            const dataToSave = JSON.parse(JSON.stringify(creds));
+            await setDoc(sessionDocRef, dataToSave);
+            console.log(`[Firestore] Données de connexion mises à jour pour la session : ${sessionId}`);
+        } catch (error) {
+            console.error(`[Firestore] Erreur lors de la sauvegarde des données de session:`, error);
+        }
+    };
+    
+    return {
+        state: { creds, saveCreds },
+        exists: docSnap?.exists()
+    };
+};
+
+const connectToWhatsApp = async (socket, sessionId) => {
+    const { state, exists } = await getAuthFromFirestore(sessionId);
+    
+    let sock;
+    if (exists) {
+        // Restaurer la session existante
+        console.log(`[Baileys] Session existante restaurée pour l'ID: ${sessionId}.`);
+        const { version } = await fetchLatestBaileysVersion();
+        sock = makeWASocket({
+            version,
+            logger: pino({ level: 'info' }),
+            printQRInTerminal: false,
+            browser: Browsers.macOS('Desktop'),
+            auth: state,
+        });
+    } else {
+        // Créer une nouvelle session
+        const { version } = await fetchLatestBaileysVersion();
+        console.log(`[Baileys] Version: ${version}. Initialisation de la session pour l'ID: ${sessionId}.`);
+        sock = makeWASocket({
+            version,
+            logger: pino({ level: 'info' }),
+            printQRInTerminal: false,
+            browser: Browsers.macOS('Desktop'),
+            auth: state,
+        });
+    }
+
+    // Attache les événements de Baileys
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr) {
+            const qrCodeBase64 = await qrcode.toDataURL(qr);
+            console.log(`[Baileys] QR Code généré pour l'ID: ${sessionId}`);
+            socket.emit('qr', qrCodeBase64);
+        }
+
+        if (connection === 'close') {
+            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log(`[Baileys] La connexion a été fermée pour l'ID: ${sessionId}, raison:`, lastDisconnect?.error);
+            socket.emit('closed', lastDisconnect?.error);
+
+            if (shouldReconnect) {
+                // Tente de se reconnecter
+                connectToWhatsApp(socket, sessionId);
+            }
+        } else if (connection === 'open') {
+            console.log(`[Baileys] Connexion ouverte pour l'ID: ${sessionId}`);
+            socket.emit('connected');
+        }
+    });
+
+    // Événement pour la mise à jour des credentials
+    sock.ev.on('creds.update', state.saveCreds);
+
+    activeSessions.set(sessionId, sock);
+};
+
+// Écoute les connexions Socket.IO
 io.on('connection', (socket) => {
-  console.log('Client connecté: ', socket.id);
-
-  socket.on('startQR', async () => {
+    console.log(`[Socket.IO] Un client est connecté: ${socket.id}`);
+    
+    // Génère un ID de session unique pour ce client
     const sessionId = uuidv4();
     socket.join(sessionId);
-    console.log(`[Socket.IO] 'startQR' reçu. Session: ${sessionId}`);
-    if (activeSessions.has(sessionId)) {
-      activeSessions.get(sessionId)?.end();
-      activeSessions.delete(sessionId);
-    }
-    const sock = await startBaileysSession(sessionId, 'qr');
-    if (sock) activeSessions.set(sessionId, sock);
-  });
+    console.log(`[Socket.IO] Le client ${socket.id} a rejoint la session ${sessionId}.`);
 
-  socket.on('startPairingCode', async ({ phoneNumber }) => {
-    const sessionId = uuidv4();
-    socket.join(sessionId);
-    console.log(`[Socket.IO] 'startPairingCode' reçu. Session: ${sessionId}`);
-    if (activeSessions.has(sessionId)) {
-      activeSessions.get(sessionId)?.end();
-      activeSessions.delete(sessionId);
-    }
-    const sock = await startBaileysSession(sessionId, 'pairing', phoneNumber);
-    if (sock) activeSessions.set(sessionId, sock);
-  });
+    connectToWhatsApp(socket, sessionId);
 
-  socket.on('disconnect', () => {
-    for (const [sessionId, sock] of activeSessions.entries()) {
-      const socketsInRoom = io.sockets.adapter.rooms.get(sessionId);
-      if (!socketsInRoom || socketsInRoom.size === 0) {
-        sock?.end();
-        activeSessions.delete(sessionId);
-        console.log(`Session fermée (déconnexion client): ${sessionId}`);
-      }
-    }
-    console.log(`Client déconnecté: ${socket.id}`);
-  });
+    socket.on('disconnect', () => {
+        const sock = activeSessions.get(sessionId);
+        if (sock) {
+            console.log(`[Socket.IO] Déconnexion du client. Fermeture de la session Baileys pour l'ID: ${sessionId}.`);
+            sock.end();
+            activeSessions.delete(sessionId);
+        }
+    });
 });
 
-// --- Lancement serveur ---
-server.listen(port, () => {
-  console.log(`Serveur TDA d’appariement démarré sur le port ${port}`);
+// Lance le serveur
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Le serveur est à l'écoute sur le port ${PORT}`);
 });
+
