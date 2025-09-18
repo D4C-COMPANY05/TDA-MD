@@ -5,10 +5,10 @@ const express = require('express');
 const cors = require('cors');
 const pino = require('pino');
 const QRCode = require('qrcode');
-const WhiskeySocket = require('whiskeysocket');
+const http = require('http');
+const { Server } = require('socket.io');
 const {
   default: makeWASocket,
-  useMultiFileAuthState,
   fetchLatestBaileysVersion
 } = require('@adiwajshing/baileys');
 const admin = require('firebase-admin');
@@ -22,7 +22,7 @@ try {
     serviceAccount = require('./firebase-service-account.json');
   }
 } catch (error) {
-  console.error("Erreur lors du chargement de la clé Firebase:", error);
+  console.error("Erreur Firebase:", error);
   process.exit(1);
 }
 
@@ -34,13 +34,13 @@ const db = admin.firestore();
 // --- Express ---
 const app = express();
 const port = process.env.PORT || 3000;
-app.use(cors({ origin: '*' }));
+app.use(cors());
 app.use(express.json());
-app.use(express.static('public')); // pour client HTML/JS
+app.use(express.static('public'));
 
-// --- WhiskeySocket ---
-const server = require('http').createServer(app);
-const ws = new WhiskeySocket.Server({ server });
+// --- HTTP + Socket.IO ---
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
 
 // --- Auth Baileys depuis Firestore ---
 async function getAuthFromFirestore(sessionId) {
@@ -57,8 +57,8 @@ async function getAuthFromFirestore(sessionId) {
   return { state: { creds, saveCreds } };
 }
 
-// --- Gestion des sockets ---
-ws.on('connection', async (socket) => {
+// --- Gestion des connexions Socket.IO ---
+io.on('connection', (socket) => {
   console.log('Client connecté:', socket.id);
 
   socket.on('startPair', async ({ sessionId, mode, phoneNumber }) => {
@@ -84,10 +84,10 @@ ws.on('connection', async (socket) => {
         if (!phoneNumber) return socket.emit('error', 'Numéro requis pour pairing code.');
         try {
           const code = await sock.requestPairingCode(phoneNumber);
-          return socket.emit('pairingCode', code);
+          socket.emit('pairingCode', code);
         } catch (err) {
           console.error('Erreur pairing code:', err);
-          return socket.emit('error', 'Impossible de générer le code d’appariement.');
+          socket.emit('error', 'Impossible de générer le code d’appariement.');
         }
       }
 
@@ -97,7 +97,7 @@ ws.on('connection', async (socket) => {
 
         if (qr) {
           QRCode.toDataURL(qr, (err, url) => {
-            if (err) return socket.emit('error', 'Erreur de génération du QR code.');
+            if (err) return socket.emit('error', 'Erreur génération QR code.');
             socket.emit('qrCode', url);
           });
         }
@@ -108,7 +108,7 @@ ws.on('connection', async (socket) => {
       });
 
     } catch (e) {
-      console.error("Erreur du serveur Baileys:", e);
+      console.error("Erreur serveur Baileys:", e);
       socket.emit('error', 'Erreur lors de l’initialisation de la session.');
     }
   });
