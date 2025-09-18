@@ -67,38 +67,22 @@ const getAuthFromFirestore = async (sessionId) => {
     try {
         const docSnap = await getDoc(sessionDocRef);
         if (docSnap.exists) {
-            // Si le document existe, on récupère les données
             creds = docSnap.data();
             console.log(`[Firestore] Session trouvée pour l'ID : ${sessionId}`);
         } else {
-            // Si le document n'existe pas, on initialise un objet d'authentification vide
-            // avec la structure minimale requise par Baileys
             console.log(`[Firestore] Nouvelle session. Initialisation des identifiants.`);
-            creds = {
-                noiseKey: {},
-                identityKey: {},
-                signedPreKey: {},
-                signedIdentityKey: {}
-            };
+            creds = {}; // Baileys initialisera la structure si vide
         }
     } catch (error) {
         console.error(`[Firestore] Erreur lors de la récupération du document de session: ${error}`);
-        // En cas d'erreur de récupération, on retourne une structure vide pour que Baileys puisse la générer
-        creds = {
-            noiseKey: {},
-            identityKey: {},
-            signedPreKey: {},
-            signedIdentityKey: {}
-        };
+        creds = {}; // En cas d'erreur, on initialise un objet vide pour permettre la connexion
     }
 
     // Fonction pour sauvegarder les mises à jour des credentials
     const saveCreds = async (newCreds) => {
         Object.assign(creds, newCreds);
         try {
-            // Baileys utilise des objets Buffer, il faut les convertir
-            const dataToSave = JSON.parse(JSON.stringify(creds));
-            await setDoc(sessionDocRef, dataToSave);
+            await setDoc(sessionDocRef, creds);
             console.log(`[Firestore] Données de connexion mises à jour pour la session : ${sessionId}`);
         } catch (error) {
             console.error(`[Firestore] Erreur lors de la sauvegarde des données de session:`, error);
@@ -107,7 +91,7 @@ const getAuthFromFirestore = async (sessionId) => {
     
     return {
         state: { creds, saveCreds },
-        exists: docSnap?.exists
+        exists: creds && Object.keys(creds).length > 0
     };
 };
 
@@ -116,7 +100,6 @@ const connectToWhatsApp = async (socket, sessionId) => {
     
     let sock;
     if (exists) {
-        // Restaurer la session existante
         console.log(`[Baileys] Session existante restaurée pour l'ID: ${sessionId}.`);
         const { version } = await fetchLatestBaileysVersion();
         sock = makeWASocket({
@@ -127,7 +110,6 @@ const connectToWhatsApp = async (socket, sessionId) => {
             auth: state,
         });
     } else {
-        // Créer une nouvelle session
         const { version } = await fetchLatestBaileysVersion();
         console.log(`[Baileys] Version: ${version}. Initialisation de la session pour l'ID: ${sessionId}.`);
         sock = makeWASocket({
@@ -139,7 +121,6 @@ const connectToWhatsApp = async (socket, sessionId) => {
         });
     }
 
-    // Attache les événements de Baileys
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -155,7 +136,6 @@ const connectToWhatsApp = async (socket, sessionId) => {
             socket.emit('closed', lastDisconnect?.error);
 
             if (shouldReconnect) {
-                // Tente de se reconnecter
                 connectToWhatsApp(socket, sessionId);
             }
         } else if (connection === 'open') {
@@ -164,17 +144,14 @@ const connectToWhatsApp = async (socket, sessionId) => {
         }
     });
 
-    // Événement pour la mise à jour des credentials
     sock.ev.on('creds.update', state.saveCreds);
 
     activeSessions.set(sessionId, sock);
 };
 
-// Écoute les connexions Socket.IO
 io.on('connection', (socket) => {
     console.log(`[Socket.IO] Un client est connecté: ${socket.id}`);
     
-    // Génère un ID de session unique pour ce client
     const sessionId = uuidv4();
     socket.join(sessionId);
     console.log(`[Socket.IO] Le client ${socket.id} a rejoint la session ${sessionId}.`);
@@ -191,7 +168,6 @@ io.on('connection', (socket) => {
     });
 });
 
-// Lance le serveur
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Le serveur est à l'écoute sur le port ${PORT}`);
