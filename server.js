@@ -1,3 +1,5 @@
+// server.js
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -74,7 +76,7 @@ io.on('connection', (socket) => {
         printQRInTerminal: false,
         auth: state,
         browser: ['TDA - The Dread Alliance', 'Chrome', '1.0'],
-        mobile: mode === 'code'
+        mobile: false // Forcer le mode navigateur car l'API mobile est obsolète
       });
 
       sock.ev.on('creds.update', state.saveCreds);
@@ -83,6 +85,7 @@ io.on('connection', (socket) => {
       if (mode === 'code') {
         if (!phoneNumber) return socket.emit('error', 'Numéro requis pour pairing code.');
         try {
+          // La méthode pairPhone fonctionne en mode navigateur
           const code = await sock.pairPhone(phoneNumber);
           socket.emit('pairingCode', code);
         } catch (err) {
@@ -129,3 +132,4 @@ io.on('connection', (socket) => {
 server.listen(port, () => {
   console.log(`Serveur TDA d’appariement démarré sur le port ${port}`);
 });
+
