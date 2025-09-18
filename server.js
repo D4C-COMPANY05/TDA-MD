@@ -10,7 +10,7 @@ const { Server } = require('socket.io');
 const {
   default: makeWASocket,
   fetchLatestBaileysVersion
-} = require('@shizodev/baileys'); // Changement de la bibliothèque
+} = require('@whiskeysockets/baileys'); // Utilisation de la bibliothèque fiable
 const admin = require('firebase-admin');
 
 // --- Firebase ---
@@ -75,8 +75,8 @@ io.on('connection', (socket) => {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         auth: state,
-        browser: ['TDA - The Dread Alliance', 'Chrome', '1.0'],
-        mobile: false
+        browser: ['Ubuntu', 'Firefox', '1.0'],
+        mobile: false // Le mode mobile est désactivé pour forcer le mode navigateur
       });
 
       sock.ev.on('creds.update', state.saveCreds);
