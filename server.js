@@ -86,7 +86,7 @@ io.on('connection', (socket) => {
 
       const sock = makeWASocket({
         version,
-        logger: pino({ level: 'silent' }),
+        logger: pino({ level: 'info' }), // Mis à jour pour le débogage
         printQRInTerminal: false,
         auth: state,
         browser: ['TDA - The Dread Alliance', 'Chrome', '1.0'],
@@ -120,7 +120,7 @@ io.on('connection', (socket) => {
           // Connexion fermée, on envoie un message d'erreur au client
           const reason = lastDisconnect?.error?.output?.payload?.message || "Erreur inconnue";
           socket.emit('error', `Connexion fermée: ${reason}`);
-          console.log(`[Baileys] Connexion fermée pour session ID: ${sessionId}. Raison: ${reason}`);
+          console.error(`[Baileys] Connexion fermée pour session ID: ${sessionId}. Raison:`, lastDisconnect?.error);
         }
       });
 
