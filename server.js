@@ -22,7 +22,7 @@ try {
     serviceAccount = require('./firebase-service-account.json');
   }
 } catch (error) {
-  console.error("Erreur Firebase: ", error);
+  console.error("Erreur Firebase:", error);
   process.exit(1);
 }
 
@@ -59,16 +59,18 @@ async function getAuthFromFirestore(sessionId) {
 
 // --- Gestion des connexions Socket.IO ---
 io.on('connection', (socket) => {
-  console.log('Client connecté: ', socket.id);
+  console.log('Client connecté:', socket.id);
 
   socket.on('startPair', async ({ sessionId, mode, phoneNumber }) => {
-    console.log(`[Socket.IO] startPair reçu: ${sessionId}, mode: ${mode}, numéro: ${phoneNumber}`);
-    if (!sessionId) return socket.emit('error', 'ID de session requis.');
+    if (!sessionId) {
+      console.log('ID de session requis, envoi d\'une erreur au client.');
+      return socket.emit('error', 'ID de session requis.');
+    }
 
     try {
       const { state } = await getAuthFromFirestore(sessionId);
       const { version } = await fetchLatestBaileysVersion();
-      console.log(`[Baileys] Version: ${version}. Initialisation de la session.`);
+      console.log('Démarrage de la session avec la version Baileys:', version);
 
       const sock = makeWASocket({
         version,
@@ -76,53 +78,56 @@ io.on('connection', (socket) => {
         printQRInTerminal: false,
         auth: state,
         browser: ['TDA - The Dread Alliance', 'Chrome', '1.0'],
-        mobile: false // Forcer le mode navigateur car l'API mobile est obsolète
+        mobile: false // Forcer le mode navigateur pour contourner l'API mobile non prise en charge
       });
 
       sock.ev.on('creds.update', state.saveCreds);
-
-      // --- Pairing code ---
-      if (mode === 'code') {
-        if (!phoneNumber) return socket.emit('error', 'Numéro requis pour pairing code.');
-        try {
-          // La méthode pairPhone fonctionne en mode navigateur
-          const code = await sock.pairPhone(phoneNumber);
-          socket.emit('pairingCode', code);
-        } catch (err) {
-          console.error('[Erreur] Impossible de générer le code d’appariement: ', err);
-          socket.emit('error', 'Impossible de générer le code d’appariement.');
-        }
-      }
 
       // --- QR code ---
       sock.ev.on('connection.update', (update) => {
         const { connection, qr, lastDisconnect } = update;
 
         if (qr) {
+          console.log('QR code reçu, envoi au client.');
           QRCode.toDataURL(qr, (err, url) => {
-            if (err) return socket.emit('error', 'Erreur génération QR code.');
+            if (err) {
+              console.error('Erreur génération QR code:', err);
+              return socket.emit('error', 'Erreur génération QR code.');
+            }
             socket.emit('qrCode', url);
           });
         }
-
+        
         if (connection === 'open') {
+          console.log('Connexion établie, bot connecté avec succès!');
           socket.emit('connected', 'Bot connecté avec succès!');
         }
-
+        
         if (connection === 'close') {
-          const reason = lastDisconnect?.error?.output?.payload?.message || "Erreur inconnue";
-          socket.emit('error', `Connexion fermée: ${reason}`);
+          console.log('Connexion fermée:', lastDisconnect.error);
+          socket.emit('error', 'La connexion a été fermée.');
         }
       });
-
-      // --- Cleanup socket côté serveur ---
-      socket.on('disconnect', () => {
-        sock?.end?.();
-        console.log(`Client déconnecté: ${socket.id}`);
-      });
+      
+      // --- Pairing code ---
+      if (mode === 'code') {
+        if (!phoneNumber) {
+          console.log('Numéro de téléphone requis, envoi d\'une erreur au client.');
+          return socket.emit('error', 'Numéro requis pour le code d’appariement.');
+        }
+        console.log('Demande de code d\'appariement pour le numéro:', phoneNumber);
+        try {
+          const code = await sock.requestPairingCode(phoneNumber);
+          console.log('Code d\'appariement généré, envoi au client.');
+          socket.emit('pairingCode', code);
+        } catch (err) {
+          console.error('Erreur pairing code:', err);
+          socket.emit('error', 'Impossible de générer le code d’appariement.');
+        }
+      }
 
     } catch (e) {
-      console.error('[Erreur serveur Baileys]', e);
+      console.error("Erreur serveur Baileys:", e);
       socket.emit('error', 'Erreur lors de l’initialisation de la session.');
     }
   });
