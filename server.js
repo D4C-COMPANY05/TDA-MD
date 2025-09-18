@@ -10,7 +10,8 @@ const socketIO = require('socket.io');
 const cors = require('cors');
 const pino = require('pino');
 const qrcode = require('qrcode');
-const { getFirestore, doc, getDoc, setDoc } = require('firebase-admin/firestore');
+// Renommer l'import de doc en docRef pour vérifier le changement de code
+const { getFirestore, doc: docRef, getDoc, setDoc } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
 const { v4: uuidv4 } = require('uuid');
 
@@ -61,20 +62,17 @@ const activeSessions = new Map();
 
 // Fonction pour récupérer l'état d'authentification et les fonctions de sauvegarde
 const getAuthFromFirestore = async (sessionId) => {
-    // La fonction doc() crée une référence de document, pas le document lui-même
-    const sessionDocRef = doc(db, 'artifacts', 'tda', 'users', sessionId, 'sessions', sessionId);
+    // Utilisation de la variable renommée docRef
+    const sessionDocRef = docRef(db, 'artifacts', 'tda', 'users', sessionId, 'sessions', sessionId);
     let creds;
 
     try {
-        // La fonction getDoc() lit le document à partir de la référence
         const docSnap = await getDoc(sessionDocRef);
-        // docSnap.exists est une propriété, pas une fonction
         if (docSnap.exists) {
             creds = docSnap.data();
             console.log(`[Firestore] Session trouvée pour l'ID : ${sessionId}`);
         } else {
             console.log(`[Firestore] Nouvelle session. Initialisation des identifiants.`);
-            // Baileys initialisera la structure si le document est vide
             creds = {};
         }
     } catch (error) {
@@ -82,11 +80,9 @@ const getAuthFromFirestore = async (sessionId) => {
         creds = {};
     }
 
-    // Fonction pour sauvegarder les mises à jour des credentials
     const saveCreds = async (newCreds) => {
         Object.assign(creds, newCreds);
         try {
-            // setDoc() écrase ou crée le document avec les nouvelles données
             await setDoc(sessionDocRef, creds);
             console.log(`[Firestore] Données de connexion mises à jour pour la session : ${sessionId}`);
         } catch (error) {
@@ -175,6 +171,7 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
+    console.log(`[INFO] Nouveau code chargé.`);
     console.log(`Le serveur est à l'écoute sur le port ${PORT}`);
 });
 
