@@ -22,7 +22,7 @@ try {
     serviceAccount = require('./firebase-service-account.json');
   }
 } catch (error) {
-  console.error("Erreur Firebase:", error);
+  console.error("Erreur Firebase: ", error);
   process.exit(1);
 }
 
@@ -59,7 +59,7 @@ async function getAuthFromFirestore(sessionId) {
 
 // --- Gestion des connexions Socket.IO ---
 io.on('connection', (socket) => {
-  console.log('Client connecté:', socket.id);
+  console.log('Client connecté: ', socket.id);
 
   socket.on('startPair', async ({ sessionId, mode, phoneNumber }) => {
     console.log(`[Socket.IO] Événement 'startPair' reçu. SessionId: ${sessionId}, Mode: ${mode}, Numéro: ${phoneNumber}`);
@@ -91,26 +91,26 @@ io.on('connection', (socket) => {
           return socket.emit('error', 'Numéro requis pour pairing code.');
         }
         try {
-          console.log('[Baileys] Demande de code de jumelage pour le numéro:', phoneNumber);
+          console.log('[Baileys] Demande de code de jumelage pour le numéro: ', phoneNumber);
           const code = await sock.requestPairingCode(phoneNumber);
           console.log(`[Baileys] Code de jumelage généré: ${code}`);
           socket.emit('pairingCode', code);
         } catch (err) {
-          console.error('[Erreur] Impossible de générer le code d’appariement:', err);
+          console.error('[Erreur] Impossible de générer le code d’appariement: ', err);
           socket.emit('error', 'Impossible de générer le code d’appariement.');
         }
       }
 
       // --- QR code ---
       sock.ev.on('connection.update', (update) => {
-        console.log('[Baileys] Mise à jour de la connexion:', update);
+        console.log('[Baileys] Mise à jour de la connexion: ', update);
         const { connection, qr } = update;
 
         if (qr) {
           console.log('[QR Code] QR code reçu de Baileys. Génération de l’URL...');
           QRCode.toDataURL(qr, (err, url) => {
             if (err) {
-              console.error('[Erreur QR] Erreur génération QR code:', err);
+              console.error('[Erreur QR] Erreur génération QR code: ', err);
               return socket.emit('error', 'Erreur génération QR code.');
             }
             console.log('[QR Code] URL du QR code générée. Envoi au client.');
@@ -125,7 +125,7 @@ io.on('connection', (socket) => {
       });
 
     } catch (e) {
-      console.error("[Erreur serveur Baileys] Erreur lors de l’initialisation de la session:", e);
+      console.error("[Erreur serveur Baileys] Erreur lors de l’initialisation de la session: ", e);
       socket.emit('error', 'Erreur lors de l’initialisation de la session.');
     }
   });
