@@ -66,7 +66,7 @@ const getAuthFromFirestore = async (sessionId) => {
 
     try {
         const docSnap = await getDoc(sessionDocRef);
-        if (docSnap.exists()) {
+        if (docSnap.exists) {
             // Si le document existe, on récupère les données
             creds = docSnap.data();
             console.log(`[Firestore] Session trouvée pour l'ID : ${sessionId}`);
@@ -107,7 +107,7 @@ const getAuthFromFirestore = async (sessionId) => {
     
     return {
         state: { creds, saveCreds },
-        exists: docSnap?.exists()
+        exists: docSnap?.exists
     };
 };
 
