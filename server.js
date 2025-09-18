@@ -78,10 +78,11 @@ async function getAuthFromFirestore(sessionId) {
 async function startBaileysSession(sessionId, connectionType, phoneNumber) {
   try {
     const authState = await getAuthFromFirestore(sessionId);
-    if (!authState) {
-      io.to(sessionId).emit('error', 'Échec de l\'initialisation de l\'authentification. ID de session manquant ou invalide.');
+    if (!authState || !authState.state || !authState.state.creds) {
+      io.to(sessionId).emit('error', 'Échec de l\'initialisation de l\'authentification. Les identifiants sont manquants ou invalides.');
       return null;
     }
+
     const { version } = await fetchLatestBaileysVersion();
     console.log(`[Baileys] Version: ${version}. Initialisation de la session.`);
 
