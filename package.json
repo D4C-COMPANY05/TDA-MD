@@ -15,7 +15,7 @@
     "firebase-admin": "^12.1.0",
     "pino": "^8.21.0",
     "qrcode": "^1.5.3",
-    "whiskeysocket": "^1.0.0
+    "whiskeysocket": "^1.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
