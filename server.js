@@ -45,8 +45,9 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
 // --- Authentification Baileys depuis Firestore ---
-async function getAuthFromFirestore(sessionId) {
-  const sessionDocRef = db.collection('artifacts').doc('tda').collection('sessions').doc(sessionId);
+async function getAuthFromFirestore(sessionId, userId) {
+  // Changement ici : le chemin inclut maintenant l'ID de l'utilisateur
+  const sessionDocRef = db.collection('artifacts').doc('tda').collection('users').doc(userId).collection('sessions').doc(sessionId);
   let creds = {};
   const doc = await sessionDocRef.get();
   if (doc.exists) {
@@ -64,9 +65,9 @@ async function getAuthFromFirestore(sessionId) {
   return { state: { creds, saveCreds } };
 }
 
-async function startBaileysSession(sessionId, connectionType, phoneNumber) {
+async function startBaileysSession(sessionId, userId, connectionType, phoneNumber) {
   try {
-    const { state } = await getAuthFromFirestore(sessionId);
+    const { state } = await getAuthFromFirestore(sessionId, userId);
     const { version } = await fetchLatestBaileysVersion();
     console.log(`[Baileys] Version: ${version}. Initialisation de la session.`);
 
@@ -138,27 +139,27 @@ const activeSessions = new Map();
 io.on('connection', (socket) => {
   console.log('Client connecté: ', socket.id);
 
-  socket.on('startQR', async ({ sessionId }) => {
+  socket.on('startQR', async ({ sessionId, userId }) => {
     socket.join(sessionId);
-    console.log(`[Socket.IO] 'startQR' reçu pour session ID: ${sessionId}`);
+    console.log(`[Socket.IO] 'startQR' reçu pour session ID: ${sessionId} et UserID: ${userId}`);
     if (activeSessions.has(sessionId)) {
       activeSessions.get(sessionId)?.end();
       activeSessions.delete(sessionId);
     }
-    const sock = await startBaileysSession(sessionId, 'qr');
+    const sock = await startBaileysSession(sessionId, userId, 'qr');
     if (sock) {
       activeSessions.set(sessionId, sock);
     }
   });
 
-  socket.on('startPairingCode', async ({ sessionId, phoneNumber }) => {
+  socket.on('startPairingCode', async ({ sessionId, userId, phoneNumber }) => {
     socket.join(sessionId);
-    console.log(`[Socket.IO] 'startPairingCode' reçu pour session ID: ${sessionId}`);
+    console.log(`[Socket.IO] 'startPairingCode' reçu pour session ID: ${sessionId} et UserID: ${userId}`);
     if (activeSessions.has(sessionId)) {
       activeSessions.get(sessionId)?.end();
       activeSessions.delete(sessionId);
     }
-    const sock = await startBaileysSession(sessionId, 'pairing', phoneNumber);
+    const sock = await startBaileysSession(sessionId, userId, 'pairing', phoneNumber);
     if (sock) {
       activeSessions.set(sessionId, sock);
     }
