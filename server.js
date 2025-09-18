@@ -61,7 +61,7 @@ async function getAuthFromFirestore(sessionId) {
 io.on('connection', (socket) => {
   console.log('Client connecté: ', socket.id);
 
-  socket.on('startPair', async ({ sessionId }) => { // Le mode et le numéro de téléphone ne sont plus nécessaires ici
+  socket.on('startPair', async ({ sessionId }) => {
     console.log(`[Socket.IO] startPair reçu pour session ID: ${sessionId}`);
     if (!sessionId) return socket.emit('error', 'ID de session requis.');
 
@@ -119,4 +119,3 @@ io.on('connection', (socket) => {
 server.listen(port, () => {
   console.log(`Serveur TDA d’appariement démarré sur le port ${port}`);
 });
-
