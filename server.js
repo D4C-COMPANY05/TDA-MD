@@ -36,7 +36,7 @@ const db = admin.firestore();
 
 // --- Express ---
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.env || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
@@ -48,18 +48,31 @@ const io = new Server(server, { cors: { origin: "*" } });
 // --- Authentification Baileys depuis Firestore ---
 async function getAuthFromFirestore(sessionId) {
   const sessionDocRef = db.collection('artifacts').doc('tda').collection('users').doc(sessionId).collection('sessions').doc(sessionId);
-  let creds = {};
+  
+  let creds;
+
   try {
     const doc = await sessionDocRef.get();
     if (doc.exists) {
       creds = doc.data();
       console.log(`[Firestore] Fichier de session trouvé pour: ${sessionId}`);
     } else {
-      console.log(`[Firestore] Nouveau fichier de session créé pour: ${sessionId}`);
+      console.log(`[Firestore] Nouveau fichier de session créé pour: ${sessionId}. Initialisation des identifiants.`);
+      creds = {}; // Initialise l'objet creds s'il n'existe pas
     }
   } catch (error) {
     console.error(`[Firestore] Erreur lors de la récupération du document de session: ${error}`);
-    return null;
+    // En cas d'erreur de récupération, on s'assure que creds est un objet vide pour permettre la nouvelle session
+    creds = {};
+  }
+  
+  // Correction: assurez-vous que la structure de l'objet creds est toujours valide pour Baileys
+  if (!creds || !creds.signedIdentityKey || !creds.signedPreKey) {
+    creds = {
+      ...creds,
+      signedIdentityKey: creds.signedIdentityKey || {},
+      signedPreKey: creds.signedPreKey || {}
+    };
   }
 
   const saveCreds = async (newCreds) => {
@@ -78,8 +91,8 @@ async function getAuthFromFirestore(sessionId) {
 async function startBaileysSession(sessionId, connectionType, phoneNumber) {
   try {
     const authState = await getAuthFromFirestore(sessionId);
-    if (!authState || !authState.state || !authState.state.creds) {
-      io.to(sessionId).emit('error', 'Échec de l\'initialisation de l\'authentification. Les identifiants sont manquants ou invalides.');
+    if (!authState || !authState.state) {
+      io.to(sessionId).emit('error', 'Échec de l\'initialisation de l\'authentification.');
       return null;
     }
 
