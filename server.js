@@ -5,7 +5,6 @@ const express = require('express');
 const cors = require('cors');
 const pino = require('pino');
 const http = require('http');
-const { Server } = require('socket.io');
 const {
   default: makeWASocket,
   fetchLatestBaileysVersion,
@@ -14,6 +13,7 @@ const {
 } = require('@whiskeysockets/baileys');
 const admin = require('firebase-admin');
 const QRCode = require('qrcode');
+const { Server } = require('socket.io');
 
 // --- Firebase ---
 let serviceAccount;
@@ -46,33 +46,39 @@ const io = new Server(server, { cors: { origin: "*" } });
 
 // --- Authentification Baileys depuis Firestore ---
 async function getAuthFromFirestore(sessionId, userId) {
-  // Ajout d'une vérification pour s'assurer que userId est une chaîne de caractères non nulle
+  // Vérification de la validité de l'userId et du sessionId
   if (!userId || typeof userId !== 'string' || userId.trim() === '') {
-      console.error("[Erreur Auth] L'ID utilisateur est manquant ou invalide.");
-      return null;
+    console.error("[Erreur Auth] L'ID utilisateur est manquant ou invalide.");
+    return null;
   }
+  if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
+    console.error("[Erreur Auth] L'ID de session est manquant ou invalide.");
+    return null;
+  }
+
+  // Correction du chemin, qui utilise à la fois le userId et le sessionId
   const sessionDocRef = db.collection('artifacts').doc('tda').collection('users').doc(userId).collection('sessions').doc(sessionId);
   let creds = {};
   try {
-      const doc = await sessionDocRef.get();
-      if (doc.exists) {
-        creds = doc.data();
-        console.log(`[Firestore] Fichier de session trouvé pour: ${sessionId}`);
-      } else {
-        console.log(`[Firestore] Nouveau fichier de session créé pour: ${sessionId}`);
-      }
+    const doc = await sessionDocRef.get();
+    if (doc.exists) {
+      creds = doc.data();
+      console.log(`[Firestore] Fichier de session trouvé pour: ${sessionId}`);
+    } else {
+      console.log(`[Firestore] Nouveau fichier de session créé pour: ${sessionId}`);
+    }
   } catch (error) {
-      console.error(`[Firestore] Erreur lors de la récupération du document de session: ${error}`);
-      return null;
+    console.error(`[Firestore] Erreur lors de la récupération du document de session: ${error}`);
+    return null;
   }
 
   const saveCreds = async (newCreds) => {
     Object.assign(creds, newCreds);
     try {
-        await sessionDocRef.set(creds);
-        console.log(`[Firestore] Données de connexion mises à jour pour la session : ${sessionId}`);
+      await sessionDocRef.set(creds);
+      console.log(`[Firestore] Données de connexion mises à jour pour la session : ${sessionId}`);
     } catch (error) {
-        console.error(`[Firestore] Erreur lors de la sauvegarde du document de session: ${error}`);
+      console.error(`[Firestore] Erreur lors de la sauvegarde du document de session: ${error}`);
     }
   };
 
@@ -83,8 +89,8 @@ async function startBaileysSession(sessionId, userId, connectionType, phoneNumbe
   try {
     const authState = await getAuthFromFirestore(sessionId, userId);
     if (!authState) {
-        io.to(sessionId).emit('error', 'Échec de l\'initialisation de l\'authentification. ID utilisateur manquant ou invalide.');
-        return null;
+      io.to(sessionId).emit('error', 'Échec de l\'initialisation de l\'authentification. ID utilisateur ou de session manquant ou invalide.');
+      return null;
     }
     const { version } = await fetchLatestBaileysVersion();
     console.log(`[Baileys] Version: ${version}. Initialisation de la session.`);
