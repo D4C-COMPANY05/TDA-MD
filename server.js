@@ -61,27 +61,32 @@ const activeSessions = new Map();
 
 // Fonction pour récupérer l'état d'authentification et les fonctions de sauvegarde
 const getAuthFromFirestore = async (sessionId) => {
+    // La fonction doc() crée une référence de document, pas le document lui-même
     const sessionDocRef = doc(db, 'artifacts', 'tda', 'users', sessionId, 'sessions', sessionId);
     let creds;
 
     try {
+        // La fonction getDoc() lit le document à partir de la référence
         const docSnap = await getDoc(sessionDocRef);
+        // docSnap.exists est une propriété, pas une fonction
         if (docSnap.exists) {
             creds = docSnap.data();
             console.log(`[Firestore] Session trouvée pour l'ID : ${sessionId}`);
         } else {
             console.log(`[Firestore] Nouvelle session. Initialisation des identifiants.`);
-            creds = {}; // Baileys initialisera la structure si vide
+            // Baileys initialisera la structure si le document est vide
+            creds = {};
         }
     } catch (error) {
         console.error(`[Firestore] Erreur lors de la récupération du document de session: ${error}`);
-        creds = {}; // En cas d'erreur, on initialise un objet vide pour permettre la connexion
+        creds = {};
     }
 
     // Fonction pour sauvegarder les mises à jour des credentials
     const saveCreds = async (newCreds) => {
         Object.assign(creds, newCreds);
         try {
+            // setDoc() écrase ou crée le document avec les nouvelles données
             await setDoc(sessionDocRef, creds);
             console.log(`[Firestore] Données de connexion mises à jour pour la session : ${sessionId}`);
         } catch (error) {
