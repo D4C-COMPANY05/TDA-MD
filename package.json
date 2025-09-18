@@ -1,7 +1,7 @@
 {
   "name": "tda-bot-server",
   "version": "1.0.0",
-  "description": "Serveur Node.js pour l'appariement WhatsApp (QR et code d’appariement) avec Baileys, WhiskeySocket et Firebase.",
+  "description": "Serveur Node.js complet pour appairage WhatsApp (QR / pairing code) avec Baileys, Socket.IO et Firebase.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -15,7 +15,7 @@
     "firebase-admin": "^12.1.0",
     "pino": "^8.21.0",
     "qrcode": "^1.5.3",
-    "whiskeysocket": "^1.0.0"
+    "socket.io": "^4.7.2"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
