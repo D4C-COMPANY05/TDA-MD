@@ -8,7 +8,7 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.17",
+    "@shizodev/baileys": "^6.6.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
@@ -23,3 +23,4 @@
   "author": "",
   "license": "MIT"
 }
+
