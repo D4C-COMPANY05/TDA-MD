@@ -61,11 +61,18 @@ async function getAuthFromFirestore(sessionId) {
 io.on('connection', (socket) => {
   console.log('Client connecté: ', socket.id);
 
-  socket.on('startPair', async ({ sessionId }) => {
-    console.log(`[Socket.IO] startPair reçu pour session ID: ${sessionId}`);
-    if (!sessionId) return socket.emit('error', 'ID de session requis.');
+  socket.on('startPair', async ({ sessionId, uid }) => {
+    console.log(`[Socket.IO] startPair reçu pour session ID: ${sessionId}, UID: ${uid}`);
+    if (!sessionId || !uid) return socket.emit('error', 'ID de session et UID requis.');
 
     try {
+      // --- Vérifier que l’UID correspond bien au sessionId ---
+      const userSessionRef = db.collection('users').doc(uid).collection('sessions').doc(sessionId);
+      const sessionSnap = await userSessionRef.get();
+      if (!sessionSnap.exists) {
+        return socket.emit('error', 'Session non autorisée.');
+      }
+
       const { state } = await getAuthFromFirestore(sessionId);
       const { version } = await fetchLatestBaileysVersion();
       console.log(`[Baileys] Version: ${version}. Initialisation de la session.`);
@@ -82,14 +89,17 @@ io.on('connection', (socket) => {
       sock.ev.on('creds.update', state.saveCreds);
 
       // --- QR code ---
-      sock.ev.on('connection.update', (update) => {
+      sock.ev.on('connection.update', async (update) => {
         const { connection, qr, lastDisconnect } = update;
 
         if (qr) {
-          QRCode.toDataURL(qr, (err, url) => {
-            if (err) return socket.emit('error', 'Erreur génération QR code.');
-            socket.emit('qrCode', url);
-          });
+          try {
+            const qrData = await QRCode.toDataURL(qr);
+            socket.emit('qrCode', qrData);
+          } catch (err) {
+            console.error("Erreur génération QR:", err);
+            socket.emit('error', 'Erreur génération QR code.');
+          }
         }
 
         if (connection === 'open') {
