@@ -1,5 +1,3 @@
-// server.js
-
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -10,7 +8,7 @@ const { Server } = require('socket.io');
 const {
   default: makeWASocket,
   fetchLatestBaileysVersion
-} = require('@adiwajshing/baileys');
+} = require('@whiskeysockets/baileys');
 const admin = require('firebase-admin');
 
 // --- Firebase ---
@@ -33,7 +31,7 @@ const db = admin.firestore();
 
 // --- Express ---
 const app = express();
-const port = process.env.env.PORT || 3000;
+const port = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
@@ -62,11 +60,8 @@ io.on('connection', (socket) => {
   console.log('Client connecté: ', socket.id);
 
   socket.on('startPair', async ({ sessionId, mode, phoneNumber }) => {
-    console.log(`[Socket.IO] Événement 'startPair' reçu. SessionId: ${sessionId}, Mode: ${mode}, Numéro: ${phoneNumber}`);
-    if (!sessionId) {
-      console.error('[Erreur] ID de session requis.');
-      return socket.emit('error', 'ID de session requis.');
-    }
+    console.log(`[Socket.IO] startPair reçu: ${sessionId}, mode: ${mode}, numéro: ${phoneNumber}`);
+    if (!sessionId) return socket.emit('error', 'ID de session requis.');
 
     try {
       const { state } = await getAuthFromFirestore(sessionId);
@@ -86,14 +81,9 @@ io.on('connection', (socket) => {
 
       // --- Pairing code ---
       if (mode === 'code') {
-        if (!phoneNumber) {
-          console.error('[Erreur] Numéro requis pour le code de jumelage.');
-          return socket.emit('error', 'Numéro requis pour pairing code.');
-        }
+        if (!phoneNumber) return socket.emit('error', 'Numéro requis pour pairing code.');
         try {
-          console.log('[Baileys] Demande de code de jumelage pour le numéro: ', phoneNumber);
           const code = await sock.pairPhone(phoneNumber);
-          console.log(`[Baileys] Code de jumelage généré: ${code}`);
           socket.emit('pairingCode', code);
         } catch (err) {
           console.error('[Erreur] Impossible de générer le code d’appariement: ', err);
@@ -103,34 +93,33 @@ io.on('connection', (socket) => {
 
       // --- QR code ---
       sock.ev.on('connection.update', (update) => {
-        console.log('[Baileys] Mise à jour de la connexion: ', update);
-        const { connection, qr } = update;
+        const { connection, qr, lastDisconnect } = update;
 
         if (qr) {
-          console.log('[QR Code] QR code reçu de Baileys. Génération de l’URL...');
           QRCode.toDataURL(qr, (err, url) => {
-            if (err) {
-              console.error('[Erreur QR] Erreur génération QR code: ', err);
-              return socket.emit('error', 'Erreur génération QR code.');
-            }
-            console.log('[QR Code] URL du QR code générée. Envoi au client.');
+            if (err) return socket.emit('error', 'Erreur génération QR code.');
             socket.emit('qrCode', url);
           });
         }
 
         if (connection === 'open') {
-          console.log('[Connexion] Bot connecté avec succès!');
           socket.emit('connected', 'Bot connecté avec succès!');
         }
-        // Gérer les cas d'échec de connexion
+
         if (connection === 'close') {
-          console.log('[Baileys] Connexion fermée. Raison: ', update.lastDisconnect.error);
-          socket.emit('error', `La connexion a été fermée: ${update.lastDisconnect.error?.output?.payload?.message || "Erreur inconnue"}`);
+          const reason = lastDisconnect?.error?.output?.payload?.message || "Erreur inconnue";
+          socket.emit('error', `Connexion fermée: ${reason}`);
         }
       });
 
+      // --- Cleanup socket côté serveur ---
+      socket.on('disconnect', () => {
+        sock?.end?.();
+        console.log(`Client déconnecté: ${socket.id}`);
+      });
+
     } catch (e) {
-      console.error("[Erreur serveur Baileys] Erreur lors de l’initialisation de la session: ", e);
+      console.error('[Erreur serveur Baileys]', e);
       socket.emit('error', 'Erreur lors de l’initialisation de la session.');
     }
   });
@@ -140,4 +129,3 @@ io.on('connection', (socket) => {
 server.listen(port, () => {
   console.log(`Serveur TDA d’appariement démarré sur le port ${port}`);
 });
-
