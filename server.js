@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const pino = require('pino');
 const http = require('http');
+const { Server } = require('socket.io');
 const {
   default: makeWASocket,
   fetchLatestBaileysVersion,
@@ -13,7 +14,7 @@ const {
 } = require('@whiskeysockets/baileys');
 const admin = require('firebase-admin');
 const QRCode = require('qrcode');
-const { Server } = require('socket.io');
+const { v4: uuidv4 } = require('uuid');
 
 // --- Firebase ---
 let serviceAccount;
@@ -45,19 +46,8 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
 // --- Authentification Baileys depuis Firestore ---
-async function getAuthFromFirestore(sessionId, userId) {
-  // Vérification de la validité de l'userId et du sessionId
-  if (!userId || typeof userId !== 'string' || userId.trim() === '') {
-    console.error("[Erreur Auth] L'ID utilisateur est manquant ou invalide.");
-    return null;
-  }
-  if (!sessionId || typeof sessionId !== 'string' || sessionId.trim() === '') {
-    console.error("[Erreur Auth] L'ID de session est manquant ou invalide.");
-    return null;
-  }
-
-  // Correction du chemin, qui utilise à la fois le userId et le sessionId
-  const sessionDocRef = db.collection('artifacts').doc('tda').collection('users').doc(userId).collection('sessions').doc(sessionId);
+async function getAuthFromFirestore(sessionId) {
+  const sessionDocRef = db.collection('artifacts').doc('tda').collection('users').doc(sessionId).collection('sessions').doc(sessionId);
   let creds = {};
   try {
     const doc = await sessionDocRef.get();
@@ -85,11 +75,11 @@ async function getAuthFromFirestore(sessionId, userId) {
   return { state: { creds, saveCreds } };
 }
 
-async function startBaileysSession(sessionId, userId, connectionType, phoneNumber) {
+async function startBaileysSession(sessionId, connectionType, phoneNumber) {
   try {
-    const authState = await getAuthFromFirestore(sessionId, userId);
+    const authState = await getAuthFromFirestore(sessionId);
     if (!authState) {
-      io.to(sessionId).emit('error', 'Échec de l\'initialisation de l\'authentification. ID utilisateur ou de session manquant ou invalide.');
+      io.to(sessionId).emit('error', 'Échec de l\'initialisation de l\'authentification. ID de session manquant ou invalide.');
       return null;
     }
     const { version } = await fetchLatestBaileysVersion();
@@ -101,13 +91,12 @@ async function startBaileysSession(sessionId, userId, connectionType, phoneNumbe
       printQRInTerminal: false,
       auth: authState.state,
       browser: ['Ubuntu Linux', 'Chrome', '1.0'],
-      mobile: false // Changé à false pour utiliser l'API web
+      mobile: false
     });
 
     sock.ev.on('creds.update', authState.state.saveCreds);
 
     if (connectionType === 'qr') {
-      // Générer et envoyer le QR code
       sock.ev.on('connection.update', (update) => {
         const { qr } = update;
         if (qr) {
@@ -121,7 +110,6 @@ async function startBaileysSession(sessionId, userId, connectionType, phoneNumbe
         }
       });
     } else if (connectionType === 'pairing') {
-      // Générer et envoyer le code d'appariement
       if (phoneNumber && isJidPairing(sock.user?.id)) {
         console.log(`[Baileys] Tentative de connexion avec le code d'appariement pour: ${phoneNumber}`);
         const code = await sock.requestPairingCode(phoneNumber);
@@ -132,7 +120,6 @@ async function startBaileysSession(sessionId, userId, connectionType, phoneNumbe
       }
     }
 
-    // Gestion des mises à jour de connexion
     sock.ev.on('connection.update', (update) => {
       const { connection, lastDisconnect } = update;
       if (connection === 'open') {
@@ -163,27 +150,29 @@ const activeSessions = new Map();
 io.on('connection', (socket) => {
   console.log('Client connecté: ', socket.id);
 
-  socket.on('startQR', async ({ sessionId, userId }) => {
+  socket.on('startQR', async () => {
+    const sessionId = uuidv4();
     socket.join(sessionId);
-    console.log(`[Socket.IO] 'startQR' reçu pour session ID: ${sessionId} et UserID: ${userId}`);
+    console.log(`[Socket.IO] 'startQR' reçu. Génération de la session ID: ${sessionId}`);
     if (activeSessions.has(sessionId)) {
       activeSessions.get(sessionId)?.end();
       activeSessions.delete(sessionId);
     }
-    const sock = await startBaileysSession(sessionId, userId, 'qr');
+    const sock = await startBaileysSession(sessionId, 'qr');
     if (sock) {
       activeSessions.set(sessionId, sock);
     }
   });
 
-  socket.on('startPairingCode', async ({ sessionId, userId, phoneNumber }) => {
+  socket.on('startPairingCode', async ({ phoneNumber }) => {
+    const sessionId = uuidv4();
     socket.join(sessionId);
-    console.log(`[Socket.IO] 'startPairingCode' reçu pour session ID: ${sessionId} et UserID: ${userId}`);
+    console.log(`[Socket.IO] 'startPairingCode' reçu. Génération de la session ID: ${sessionId}`);
     if (activeSessions.has(sessionId)) {
       activeSessions.get(sessionId)?.end();
       activeSessions.delete(sessionId);
     }
-    const sock = await startBaileysSession(sessionId, userId, 'pairing', phoneNumber);
+    const sock = await startBaileysSession(sessionId, 'pairing', phoneNumber);
     if (sock) {
       activeSessions.set(sessionId, sock);
     }
