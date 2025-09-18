@@ -10,7 +10,7 @@ const { Server } = require('socket.io');
 const {
   default: makeWASocket,
   fetchLatestBaileysVersion
-} = require('@whiskeysockets/baileys');
+} = require('@shizodev/baileys'); // Changement de la bibliothèque
 const admin = require('firebase-admin');
 
 // --- Firebase ---
@@ -76,7 +76,7 @@ io.on('connection', (socket) => {
         printQRInTerminal: false,
         auth: state,
         browser: ['TDA - The Dread Alliance', 'Chrome', '1.0'],
-        mobile: false // Forcer le mode navigateur car l'API mobile est obsolète
+        mobile: false
       });
 
       sock.ev.on('creds.update', state.saveCreds);
@@ -85,7 +85,6 @@ io.on('connection', (socket) => {
       if (mode === 'code') {
         if (!phoneNumber) return socket.emit('error', 'Numéro requis pour pairing code.');
         try {
-          // La méthode requestPairingCode fonctionne en mode navigateur
           const code = await sock.requestPairingCode(phoneNumber);
           socket.emit('pairingCode', code);
         } catch (err) {
