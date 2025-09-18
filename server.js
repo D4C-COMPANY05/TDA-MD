@@ -5,6 +5,7 @@ const express = require('express');
 const cors = require('cors');
 const pino = require('pino');
 const QRCode = require('qrcode');
+const WhiskeySocket = require('whiskeysocket');
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -21,7 +22,7 @@ try {
     serviceAccount = require('./firebase-service-account.json');
   }
 } catch (error) {
-  console.error("Erreur lors du chargement de la clé de service Firebase:", error);
+  console.error("Erreur lors du chargement de la clé Firebase:", error);
   process.exit(1);
 }
 
@@ -33,15 +34,15 @@ const db = admin.firestore();
 // --- Express ---
 const app = express();
 const port = process.env.PORT || 3000;
-
+app.use(cors({ origin: '*' }));
 app.use(express.json());
-app.use(cors({
-  origin: '*',
-  methods: ['GET','POST'],
-  allowedHeaders: ['Content-Type']
-}));
+app.use(express.static('public')); // pour client HTML/JS
 
-// --- Auth Baileys stockée dans Firestore ---
+// --- WhiskeySocket ---
+const server = require('http').createServer(app);
+const ws = new WhiskeySocket.Server({ server });
+
+// --- Auth Baileys depuis Firestore ---
 async function getAuthFromFirestore(sessionId) {
   const sessionDocRef = db.collection('artifacts').doc('tda').collection('sessions').doc(sessionId);
   let creds = {};
@@ -56,61 +57,64 @@ async function getAuthFromFirestore(sessionId) {
   return { state: { creds, saveCreds } };
 }
 
-// --- Endpoint pair ---
-app.post('/pair', async (req, res) => {
-  const { sessionId, mode, phoneNumber } = req.body; // mode: 'qr' ou 'code'
-  if (!sessionId) return res.status(400).json({ error: 'ID de session requis.' });
+// --- Gestion des sockets ---
+ws.on('connection', async (socket) => {
+  console.log('Client connecté:', socket.id);
 
-  try {
-    const { state } = await getAuthFromFirestore(sessionId);
-    const { version } = await fetchLatestBaileysVersion();
+  socket.on('startPair', async ({ sessionId, mode, phoneNumber }) => {
+    if (!sessionId) return socket.emit('error', 'ID de session requis.');
 
-    const sock = makeWASocket({
-      version,
-      logger: pino({ level: 'silent' }),
-      printQRInTerminal: false,
-      auth: state,
-      browser: ['TDA - The Dread Alliance', 'Chrome', '1.0'],
-      mobile: mode === 'code' // obligatoire pour pairing code
-    });
+    try {
+      const { state } = await getAuthFromFirestore(sessionId);
+      const { version } = await fetchLatestBaileysVersion();
 
-    sock.ev.on('creds.update', state.saveCreds);
+      const sock = makeWASocket({
+        version,
+        logger: pino({ level: 'silent' }),
+        printQRInTerminal: false,
+        auth: state,
+        browser: ['TDA - The Dread Alliance', 'Chrome', '1.0'],
+        mobile: mode === 'code'
+      });
 
-    // MODE CODE
-    if (mode === 'code') {
-      if (!phoneNumber) return res.status(400).json({ error: 'Numéro requis pour pairing code.' });
-      try {
-        const code = await sock.requestPairingCode(phoneNumber);
-        return res.json({ status: 'pairing_code', code });
-      } catch (err) {
-        console.error('Erreur pairing code:', err);
-        return res.status(500).json({ error: 'Impossible de générer le code d’appariement.' });
+      sock.ev.on('creds.update', state.saveCreds);
+
+      // --- Pairing code ---
+      if (mode === 'code') {
+        if (!phoneNumber) return socket.emit('error', 'Numéro requis pour pairing code.');
+        try {
+          const code = await sock.requestPairingCode(phoneNumber);
+          return socket.emit('pairingCode', code);
+        } catch (err) {
+          console.error('Erreur pairing code:', err);
+          return socket.emit('error', 'Impossible de générer le code d’appariement.');
+        }
       }
+
+      // --- QR code ---
+      sock.ev.on('connection.update', (update) => {
+        const { connection, qr } = update;
+
+        if (qr) {
+          QRCode.toDataURL(qr, (err, url) => {
+            if (err) return socket.emit('error', 'Erreur de génération du QR code.');
+            socket.emit('qrCode', url);
+          });
+        }
+
+        if (connection === 'open') {
+          socket.emit('connected', 'Bot connecté avec succès!');
+        }
+      });
+
+    } catch (e) {
+      console.error("Erreur du serveur Baileys:", e);
+      socket.emit('error', 'Erreur lors de l’initialisation de la session.');
     }
-
-    // MODE QR
-    sock.ev.on('connection.update', (update) => {
-      const { connection, qr } = update;
-
-      if (qr) {
-        QRCode.toDataURL(qr, (err, url) => {
-          if (err) return res.status(500).json({ error: 'Erreur de génération du QR code.' });
-          return res.json({ status: 'qr_code', qrCode: url });
-        });
-      }
-
-      if (connection === 'open') {
-        return res.json({ status: 'connected', message: 'Bot connecté avec succès!' });
-      }
-    });
-
-  } catch (e) {
-    console.error("Erreur du serveur Baileys:", e);
-    res.status(500).json({ error: 'Une erreur est survenue lors de l’initialisation de la session.' });
-  }
+  });
 });
 
-// --- Lancement ---
-app.listen(port, () => {
+// --- Lancement serveur ---
+server.listen(port, () => {
   console.log(`Serveur TDA d’appariement démarré sur le port ${port}`);
 });
