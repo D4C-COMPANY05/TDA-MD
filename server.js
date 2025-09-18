@@ -75,8 +75,8 @@ async function startBaileysSession(sessionId, connectionType, phoneNumber) {
       logger: pino({ level: 'info' }),
       printQRInTerminal: false,
       auth: state,
-      browser: ['TDA - The Dread Alliance', 'Chrome', '1.0'],
-      mobile: true // IMPORTANT: Pour le code d'appariement, le client doit être considéré comme mobile
+      browser: ['Ubuntu Linux', 'Chrome', '1.0'],
+      mobile: false // Changé à false pour utiliser l'API web
     });
 
     sock.ev.on('creds.update', state.saveCreds);
