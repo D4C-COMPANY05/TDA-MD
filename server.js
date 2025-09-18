@@ -62,11 +62,16 @@ io.on('connection', (socket) => {
   console.log('Client connecté:', socket.id);
 
   socket.on('startPair', async ({ sessionId, mode, phoneNumber }) => {
-    if (!sessionId) return socket.emit('error', 'ID de session requis.');
+    console.log(`[Socket.IO] Événement 'startPair' reçu. SessionId: ${sessionId}, Mode: ${mode}, Numéro: ${phoneNumber}`);
+    if (!sessionId) {
+      console.error('[Erreur] ID de session requis.');
+      return socket.emit('error', 'ID de session requis.');
+    }
 
     try {
       const { state } = await getAuthFromFirestore(sessionId);
       const { version } = await fetchLatestBaileysVersion();
+      console.log(`[Baileys] Version: ${version}. Initialisation de la session.`);
 
       const sock = makeWASocket({
         version,
@@ -81,34 +86,46 @@ io.on('connection', (socket) => {
 
       // --- Pairing code ---
       if (mode === 'code') {
-        if (!phoneNumber) return socket.emit('error', 'Numéro requis pour pairing code.');
+        if (!phoneNumber) {
+          console.error('[Erreur] Numéro requis pour le code de jumelage.');
+          return socket.emit('error', 'Numéro requis pour pairing code.');
+        }
         try {
+          console.log('[Baileys] Demande de code de jumelage pour le numéro:', phoneNumber);
           const code = await sock.requestPairingCode(phoneNumber);
+          console.log(`[Baileys] Code de jumelage généré: ${code}`);
           socket.emit('pairingCode', code);
         } catch (err) {
-          console.error('Erreur pairing code:', err);
+          console.error('[Erreur] Impossible de générer le code d’appariement:', err);
           socket.emit('error', 'Impossible de générer le code d’appariement.');
         }
       }
 
       // --- QR code ---
       sock.ev.on('connection.update', (update) => {
+        console.log('[Baileys] Mise à jour de la connexion:', update);
         const { connection, qr } = update;
 
         if (qr) {
+          console.log('[QR Code] QR code reçu de Baileys. Génération de l’URL...');
           QRCode.toDataURL(qr, (err, url) => {
-            if (err) return socket.emit('error', 'Erreur génération QR code.');
+            if (err) {
+              console.error('[Erreur QR] Erreur génération QR code:', err);
+              return socket.emit('error', 'Erreur génération QR code.');
+            }
+            console.log('[QR Code] URL du QR code générée. Envoi au client.');
             socket.emit('qrCode', url);
           });
         }
 
         if (connection === 'open') {
+          console.log('[Connexion] Bot connecté avec succès!');
           socket.emit('connected', 'Bot connecté avec succès!');
         }
       });
 
     } catch (e) {
-      console.error("Erreur serveur Baileys:", e);
+      console.error("[Erreur serveur Baileys] Erreur lors de l’initialisation de la session:", e);
       socket.emit('error', 'Erreur lors de l’initialisation de la session.');
     }
   });
@@ -118,3 +135,4 @@ io.on('connection', (socket) => {
 server.listen(port, () => {
   console.log(`Serveur TDA d’appariement démarré sur le port ${port}`);
 });
+
