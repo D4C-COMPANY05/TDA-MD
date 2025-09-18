@@ -10,7 +10,7 @@ const { Server } = require('socket.io');
 const {
   default: makeWASocket,
   fetchLatestBaileysVersion
-} = require('@whiskeysockets/baileys'); // Utilisation de la bibliothèque fiable
+} = require('@whiskeysockets/baileys');
 const admin = require('firebase-admin');
 
 // --- Firebase ---
@@ -61,8 +61,8 @@ async function getAuthFromFirestore(sessionId) {
 io.on('connection', (socket) => {
   console.log('Client connecté: ', socket.id);
 
-  socket.on('startPair', async ({ sessionId, mode, phoneNumber }) => {
-    console.log(`[Socket.IO] startPair reçu: ${sessionId}, mode: ${mode}, numéro: ${phoneNumber}`);
+  socket.on('startPair', async ({ sessionId }) => { // Le mode et le numéro de téléphone ne sont plus nécessaires ici
+    console.log(`[Socket.IO] startPair reçu pour session ID: ${sessionId}`);
     if (!sessionId) return socket.emit('error', 'ID de session requis.');
 
     try {
@@ -75,23 +75,11 @@ io.on('connection', (socket) => {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         auth: state,
-        browser: ['Ubuntu', 'Firefox', '1.0'],
-        mobile: false // Le mode mobile est désactivé pour forcer le mode navigateur
+        browser: ['TDA - The Dread Alliance', 'Chrome', '1.0'],
+        mobile: false
       });
 
       sock.ev.on('creds.update', state.saveCreds);
-
-      // --- Pairing code ---
-      if (mode === 'code') {
-        if (!phoneNumber) return socket.emit('error', 'Numéro requis pour pairing code.');
-        try {
-          const code = await sock.requestPairingCode(phoneNumber);
-          socket.emit('pairingCode', code);
-        } catch (err) {
-          console.error('[Erreur] Impossible de générer le code d’appariement: ', err);
-          socket.emit('error', 'Impossible de générer le code d’appariement.');
-        }
-      }
 
       // --- QR code ---
       sock.ev.on('connection.update', (update) => {
