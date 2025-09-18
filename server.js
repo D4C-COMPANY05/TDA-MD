@@ -46,20 +46,34 @@ const io = new Server(server, { cors: { origin: "*" } });
 
 // --- Authentification Baileys depuis Firestore ---
 async function getAuthFromFirestore(sessionId, userId) {
-  // Changement ici : le chemin inclut maintenant l'ID de l'utilisateur
+  // Ajout d'une vérification pour s'assurer que userId est une chaîne de caractères non nulle
+  if (!userId || typeof userId !== 'string' || userId.trim() === '') {
+      console.error("[Erreur Auth] L'ID utilisateur est manquant ou invalide.");
+      return null;
+  }
   const sessionDocRef = db.collection('artifacts').doc('tda').collection('users').doc(userId).collection('sessions').doc(sessionId);
   let creds = {};
-  const doc = await sessionDocRef.get();
-  if (doc.exists) {
-    creds = doc.data();
-    console.log(`[Firestore] Fichier de session trouvé pour: ${sessionId}`);
-  } else {
-    console.log(`[Firestore] Nouveau fichier de session créé pour: ${sessionId}`);
+  try {
+      const doc = await sessionDocRef.get();
+      if (doc.exists) {
+        creds = doc.data();
+        console.log(`[Firestore] Fichier de session trouvé pour: ${sessionId}`);
+      } else {
+        console.log(`[Firestore] Nouveau fichier de session créé pour: ${sessionId}`);
+      }
+  } catch (error) {
+      console.error(`[Firestore] Erreur lors de la récupération du document de session: ${error}`);
+      return null;
   }
 
   const saveCreds = async (newCreds) => {
     Object.assign(creds, newCreds);
-    await sessionDocRef.set(creds);
+    try {
+        await sessionDocRef.set(creds);
+        console.log(`[Firestore] Données de connexion mises à jour pour la session : ${sessionId}`);
+    } catch (error) {
+        console.error(`[Firestore] Erreur lors de la sauvegarde du document de session: ${error}`);
+    }
   };
 
   return { state: { creds, saveCreds } };
@@ -67,7 +81,11 @@ async function getAuthFromFirestore(sessionId, userId) {
 
 async function startBaileysSession(sessionId, userId, connectionType, phoneNumber) {
   try {
-    const { state } = await getAuthFromFirestore(sessionId, userId);
+    const authState = await getAuthFromFirestore(sessionId, userId);
+    if (!authState) {
+        io.to(sessionId).emit('error', 'Échec de l\'initialisation de l\'authentification. ID utilisateur manquant ou invalide.');
+        return null;
+    }
     const { version } = await fetchLatestBaileysVersion();
     console.log(`[Baileys] Version: ${version}. Initialisation de la session.`);
 
@@ -75,12 +93,12 @@ async function startBaileysSession(sessionId, userId, connectionType, phoneNumbe
       version,
       logger: pino({ level: 'info' }),
       printQRInTerminal: false,
-      auth: state,
+      auth: authState.state,
       browser: ['Ubuntu Linux', 'Chrome', '1.0'],
       mobile: false // Changé à false pour utiliser l'API web
     });
 
-    sock.ev.on('creds.update', state.saveCreds);
+    sock.ev.on('creds.update', authState.state.saveCreds);
 
     if (connectionType === 'qr') {
       // Générer et envoyer le QR code
