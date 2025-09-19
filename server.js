@@ -111,12 +111,11 @@ io.on('connection', (socket) => {
             auth: state,
         });
 
-        // La version de Baileys que vous utilisez ne renvoie pas directement le code
         const pairingCode = await sock.requestPairingCode(data.phoneNumber);
         if (pairingCode) {
             socket.emit('pairingCode', pairingCode);
         }
-
+    
         sock.ev.on('creds.update', saveCreds);
         sock.ev.on('connection.update', (update) => {
             const { connection } = update;
@@ -137,3 +136,4 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Le serveur est à l'écoute sur le port ${PORT}`);
 });
+
