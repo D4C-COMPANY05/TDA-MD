@@ -79,8 +79,8 @@ const connectToWhatsApp = async (socket, sessionId) => {
     } else if (connection === 'open') {
       console.log(`[Baileys] Connexion ouverte pour ${sessionId}`);
       socket.emit('connected', 'Connexion réussie !');
-      // Envoi du message de confirmation au numéro de téléphone
-      const jid = sock.user.id.replace(/:/g, ''); // Récupération de l'ID utilisateur
+      // Correction : Utilisation directe de sock.user.id
+      const jid = sock.user.id;
       await sendMessage(jid, "Félicitations ! Le bot est maintenant connecté et prêt à l'emploi.");
     }
   });
