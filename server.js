@@ -18,7 +18,7 @@ const {
   fetchLatestBaileysVersion,
   DisconnectReason,
   Browsers,
-  useMultiFileAuthState, // Utilise le stockage local de Baileys
+  useMultiFileAuthState,
 } = require('@whiskeysockets/baileys');
 
 // Chargement des variables d'environnement depuis le fichier .env
@@ -111,6 +111,7 @@ io.on('connection', (socket) => {
             auth: state,
         });
 
+        // La version de Baileys que vous utilisez ne renvoie pas directement le code
         const pairingCode = await sock.requestPairingCode(data.phoneNumber);
         if (pairingCode) {
             socket.emit('pairingCode', pairingCode);
