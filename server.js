@@ -10,8 +10,7 @@ const socketIO = require('socket.io');
 const cors = require('cors');
 const pino = require('pino');
 const qrcode = require('qrcode');
-// Renommer l'import de doc en docRef pour vérifier le changement de code
-const { getFirestore, doc: docRef, getDoc, setDoc } = require('firebase-admin/firestore');
+const { getFirestore, doc, getDoc, setDoc } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
 const { v4: uuidv4 } = require('uuid');
 
@@ -62,8 +61,7 @@ const activeSessions = new Map();
 
 // Fonction pour récupérer l'état d'authentification et les fonctions de sauvegarde
 const getAuthFromFirestore = async (sessionId) => {
-    // Utilisation de la variable renommée docRef
-    const sessionDocRef = docRef(db, 'artifacts', 'tda', 'users', sessionId, 'sessions', sessionId);
+    const sessionDocRef = doc(db, 'artifacts', 'tda', 'users', sessionId, 'sessions', sessionId);
     let creds;
 
     try {
@@ -123,12 +121,16 @@ const connectToWhatsApp = async (socket, sessionId) => {
     }
 
     sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
+        const { connection, lastDisconnect, qr, isNewLogin, receivedPendingNotifications, isOnline } = update;
 
         if (qr) {
             const qrCodeBase64 = await qrcode.toDataURL(qr);
             console.log(`[Baileys] QR Code généré pour l'ID: ${sessionId}`);
-            socket.emit('qr', qrCodeBase64);
+            socket.emit('qrCode', qrCodeBase64);
+        }
+
+        if (isNewLogin) {
+            console.log(`[Baileys] Nouveau login pour la session : ${sessionId}`);
         }
 
         if (connection === 'close') {
@@ -137,11 +139,12 @@ const connectToWhatsApp = async (socket, sessionId) => {
             socket.emit('closed', lastDisconnect?.error);
 
             if (shouldReconnect) {
+                console.log(`[Baileys] Reconnaissance automatique pour la session : ${sessionId}`);
                 connectToWhatsApp(socket, sessionId);
             }
         } else if (connection === 'open') {
             console.log(`[Baileys] Connexion ouverte pour l'ID: ${sessionId}`);
-            socket.emit('connected');
+            socket.emit('connected', 'Connexion réussie !');
         }
     });
 
@@ -153,25 +156,47 @@ const connectToWhatsApp = async (socket, sessionId) => {
 io.on('connection', (socket) => {
     console.log(`[Socket.IO] Un client est connecté: ${socket.id}`);
     
-    const sessionId = uuidv4();
-    socket.join(sessionId);
-    console.log(`[Socket.IO] Le client ${socket.id} a rejoint la session ${sessionId}.`);
+    // Attendre le signal du client avant de démarrer
+    socket.on('startQR', (data) => {
+        console.log(`[Socket.IO] Requête 'startQR' reçue pour la session: ${data.sessionId}`);
+        connectToWhatsApp(socket, data.sessionId);
+    });
 
-    connectToWhatsApp(socket, sessionId);
+    socket.on('startPairingCode', async (data) => {
+        console.log(`[Socket.IO] Requête 'startPairingCode' reçue pour la session: ${data.sessionId}, numéro: ${data.phoneNumber}`);
+        // Logique de code d'appariement
+        const { state } = await getAuthFromFirestore(data.sessionId);
+        const { version } = await fetchLatestBaileysVersion();
+        const sock = makeWASocket({
+            version,
+            logger: pino({ level: 'info' }),
+            browser: Browsers.macOS('Desktop'),
+            auth: state,
+        });
+
+        const pairingCode = await sock.requestPairingCode(data.phoneNumber);
+        if (pairingCode) {
+            socket.emit('pairingCode', pairingCode);
+        }
+
+        sock.ev.on('creds.update', state.saveCreds);
+        sock.ev.on('connection.update', (update) => {
+            const { connection } = update;
+            if (connection === 'open') {
+                socket.emit('connected', 'Connexion réussie via code d\'appariement !');
+            } else if (connection === 'close') {
+                socket.emit('error', 'La connexion a été fermée.');
+            }
+        });
+    });
 
     socket.on('disconnect', () => {
-        const sock = activeSessions.get(sessionId);
-        if (sock) {
-            console.log(`[Socket.IO] Déconnexion du client. Fermeture de la session Baileys pour l'ID: ${sessionId}.`);
-            sock.end();
-            activeSessions.delete(sessionId);
-        }
+        // La logique de déconnexion est maintenant gérée par le client
     });
 });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`[INFO] Nouveau code chargé.`);
     console.log(`Le serveur est à l'écoute sur le port ${PORT}`);
 });
 
