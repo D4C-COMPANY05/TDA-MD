@@ -41,7 +41,6 @@ const loadCommands = () => {
             const command = require(commandPath);
 
             if (command.nomCom && command.fonction) {
-                // Gestion des alias
                 if (Array.isArray(command.nomCom)) {
                     command.nomCom.forEach(n => commands.set(n.toLowerCase(), command));
                 } else {
@@ -99,8 +98,9 @@ const handleBotMessages = (sock) => {
                         repondre: (msgText) => sock.sendMessage(from, { text: msgText }, { quoted: msg }),
                         prefixe: s.PREFIXE,
                         nomAuteurMessage: msg.pushName || 'Inconnu',
-                        mybotpic: () => "https://placehold.co/600x400/000000/FFFFFF?text=Menu", // Simulation
-                        args
+                        mybotpic: () => "https://placehold.co/600x400/000000/FFFFFF?text=Menu",
+                        args,
+                        commands // ✅ ajouté ici pour éviter la dépendance circulaire
                     };
 
                     logger.info(`[Bot] Exécution de '${commandName}' par ${commandeOptions.nomAuteurMessage} (${from})`);
