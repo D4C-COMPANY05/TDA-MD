@@ -59,8 +59,8 @@ const handleBotMessages = (sock) => {
             const prefix = '!';
 
             if (text.startsWith(prefix)) {
-                const commandName = text.slice(prefix.length).split(' ')[0].toLowerCase();
-                const command = commands.get(prefix + commandName);
+                const commandName = text.split(' ')[0].toLowerCase();
+                const command = commands.get(commandName);
 
                 if (command) {
                     try {
