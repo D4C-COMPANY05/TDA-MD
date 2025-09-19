@@ -11,9 +11,9 @@ const commands = new Map();
 
 // Simulation de la variable globale `s`
 const s = {
-    BOT: "BOT ZOKOU-MD",
-    PREFIXE: "!",
-    NOM_OWNER: "Djalega++",
+    BOT: "TDA-MD",
+    PREFIXE: ".",
+    NOM_OWNER: "Kiyotaka Ayanokoji",
     MODE: "oui"
 };
 
