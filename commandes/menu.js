@@ -1,8 +1,7 @@
 const os = require("os");
 const moment = require("moment-timezone");
-const { BOT, PREFIXE, NOM_OWNER, MODE } = require("../set"); // adapte si ton fichier s’appelle différemment
+const { BOT, PREFIXE, NOM_OWNER, MODE } = require("../set");
 
-// Fonction format mémoire
 const format = (bytes) => {
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     if (bytes === 0) return '0 Bytes';
@@ -16,25 +15,21 @@ module.exports = {
     reaction: "📁",
 
     fonction: async (dest, zk, options) => {
-        let { ms, repondre, prefixe, nomAuteurMessage, mybotpic } = options;
+        let { ms, repondre, prefixe, nomAuteurMessage, mybotpic, commands } = options;
 
-        // Déterminer le mode
         let mode = (MODE.toLowerCase() === "oui") ? "public" : "privé";
 
-        // Date et heure
         moment.tz.setDefault('Etc/GMT');
         const temps = moment().format('HH:mm:ss');
         const date = moment().format('DD/MM/YYYY');
 
-        // Récupérer la liste des commandes depuis la Map
-        const { commands } = require("../index"); // exporte la Map depuis index.js
+        // Construire la liste des commandes depuis la Map
         const coms = {};
         for (const [, cmd] of commands) {
             if (!coms[cmd.categorie]) coms[cmd.categorie] = [];
             coms[cmd.categorie].push(cmd.nomCom);
         }
 
-        // Info du bot
         let infoMsg = `
 ╭────✧${BOT}✧────◆
 │   *Préfixe* : ${PREFIXE}
@@ -48,7 +43,6 @@ module.exports = {
 │   *Développeurs* : Kiyotaka Ayanokoji
 ╰─────✧WA-BOT✧─────◆\n\n`;
 
-        // Construction du menu
         let menuMsg = `
 👋 Salut ${nomAuteurMessage} 👋
 
@@ -71,7 +65,6 @@ Pour utiliser une commande, tapez ${prefixe}"nom de la commande"
 *»»————— ★ —————««*
 `;
 
-        // Image/vidéo si dispo
         const lien = mybotpic();
 
         try {
