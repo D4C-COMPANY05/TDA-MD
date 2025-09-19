@@ -10,7 +10,7 @@ const socketIO = require('socket.io');
 const cors = require('cors');
 const pino = require('pino');
 const qrcode = require('qrcode');
-const { getFirestore, doc, getDoc, setDoc } = require('firebase-admin/firestore');
+const { getFirestore, getDoc, setDoc } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
 const { v4: uuidv4 } = require('uuid');
 
@@ -61,7 +61,8 @@ const activeSessions = new Map();
 
 // Fonction pour récupérer l'état d'authentification et les fonctions de sauvegarde
 const getAuthFromFirestore = async (sessionId) => {
-    const sessionDocRef = doc(db, 'artifacts', 'tda', 'users', sessionId, 'sessions', sessionId);
+    // Changement ici : utilisation de db.doc() pour contourner le bug
+    const sessionDocRef = db.doc(`artifacts/tda/users/${sessionId}/sessions/${sessionId}`);
     let creds;
 
     try {
