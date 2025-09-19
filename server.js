@@ -137,4 +137,3 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Le serveur est à l'écoute sur le port ${PORT}`);
 });
-
