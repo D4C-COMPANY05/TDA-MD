@@ -21,6 +21,9 @@ const {
 
 require('dotenv').config();
 
+// Importation de la logique du bot
+const { handleBotMessages } = require('./index.js');
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server, {
@@ -79,9 +82,10 @@ const connectToWhatsApp = async (socket, sessionId) => {
     } else if (connection === 'open') {
       console.log(`[Baileys] Connexion ouverte pour ${sessionId}`);
       socket.emit('connected', 'Connexion réussie !');
-      // Correction : Utilisation directe de sock.user.id
       const jid = sock.user.id;
       await sendMessage(jid, "Félicitations ! Le bot est maintenant connecté et prêt à l'emploi.");
+      // Appel de la logique du bot
+      handleBotMessages(sock);
     }
   });
 
