@@ -116,4 +116,4 @@ const handleBotMessages = (sock) => {
     });
 };
 
-module.exports = { handleBotMessages };
+module.exports = { handleBotMessages, commands };
