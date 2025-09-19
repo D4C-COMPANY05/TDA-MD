@@ -1,115 +1,97 @@
-const util = require('util');
-const fs = require('fs-extra');
 const os = require("os");
 const moment = require("moment-timezone");
-const s = require("../set"); // Assurez-vous d'avoir ce fichier ou de le simuler
+const { BOT, PREFIXE, NOM_OWNER, MODE } = require("../set"); // adapte si ton fichier s’appelle différemment
 
-// Simule les fonctions du framework Zokou-MD
+// Fonction format mémoire
 const format = (bytes) => {
     const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
     if (bytes === 0) return '0 Bytes';
     const i = parseInt(Math.floor(Math.log(bytes) / Math.log(1024)), 10);
     return `${Math.round(bytes / (1024 ** i), 2)} ${sizes[i]}`;
 };
-const zokou = ({ nomCom, categorie, reaction }, fn) => {
-    // Cette fonction ne fait rien ici, elle est juste pour la compatibilité
-    return { nomCom, categorie, reaction, fonction: fn };
-};
-const cm = [
-  { nomCom: "menu", categorie: "Général" },
-  { nomCom: "test", categorie: "Tests" },
-]; // Simule la liste des commandes
 
+module.exports = {
+    nomCom: "menu",
+    categorie: "Général",
+    reaction: "📁",
 
-module.exports = zokou({ nomCom: "menu", reaction:"📁",categorie: "Général" }, async (dest, zk, commandeOptions) => {
-    let { ms, repondre ,prefixe,nomAuteurMessage,mybotpic} = commandeOptions;
-    
-    var coms = {};
-    var mode = "public";
-    
-    if ((s.MODE).toLowerCase() != "oui") {
-        mode = "privé";
-    }
+    fonction: async (dest, zk, options) => {
+        let { ms, repondre, prefixe, nomAuteurMessage, mybotpic } = options;
 
-     
+        // Déterminer le mode
+        let mode = (MODE.toLowerCase() === "oui") ? "public" : "privé";
 
-    cm.map(async (com, index) => {
-        if (!coms[com.categorie])
-            coms[com.categorie] = [];
-        coms[com.categorie].push(com.nomCom);
-    });
+        // Date et heure
+        moment.tz.setDefault('Etc/GMT');
+        const temps = moment().format('HH:mm:ss');
+        const date = moment().format('DD/MM/YYYY');
 
-    moment.tz.setDefault('Etc/GMT');
+        // Récupérer la liste des commandes depuis la Map
+        const { commands } = require("../index"); // exporte la Map depuis index.js
+        const coms = {};
+        for (const [, cmd] of commands) {
+            if (!coms[cmd.categorie]) coms[cmd.categorie] = [];
+            coms[cmd.categorie].push(cmd.nomCom);
+        }
 
-// Créer une date et une heure en GMT
-const temps = moment().format('HH:mm:ss');
-const date = moment().format('DD/MM/YYYY');
-
-  let infoMsg =  `
-╭────✧${s.BOT}✧────◆
-│   *Préfixe* : ${s.PREFIXE}
-│   *Owner* : ${s.NOM_OWNER}
+        // Info du bot
+        let infoMsg = `
+╭────✧${BOT}✧────◆
+│   *Préfixe* : ${PREFIXE}
+│   *Owner* : ${NOM_OWNER}
 │   *Mode* : ${mode}
-│   *Commandes* : ${cm.length}
+│   *Commandes* : ${commands.size}
 │   *Date* : ${date}
 │   *Heure* : ${temps}
 │   *Mémoire* : ${format(os.totalmem() - os.freemem())}/${format(os.totalmem())}
 │   *Plateforme* : ${os.platform()}
-│   *Développeurs* : Kiyotaka Ayanokoji 
-╰─────✧WA-BOT✧─────◆ \n\n`;
-    
-let menuMsg = `
-👋 salut ${nomAuteurMessage} 👋
+│   *Développeurs* : Kiyotaka Ayanokoji
+╰─────✧WA-BOT✧─────◆\n\n`;
+
+        // Construction du menu
+        let menuMsg = `
+👋 Salut ${nomAuteurMessage} 👋
 
 *Voici la liste de mes commandes :*
 ◇                             ◇
 `;
 
-    for (const cat in coms) {
-        menuMsg += `╭────❏ *${cat}* ❏`;
-        for (const cmd of coms[cat]) {
-            menuMsg += `
-│ ${cmd}`;
+        for (const cat in coms) {
+            menuMsg += `╭────❏ *${cat}* ❏`;
+            for (const cmd of coms[cat]) {
+                menuMsg += `\n│ ${cmd}`;
+            }
+            menuMsg += `\n╰═════════════⊷ \n`;
         }
-        menuMsg += `
-╰═════════════⊷ \n`
-    }
 
-    menuMsg += `
+        menuMsg += `
 ◇            ◇
 *»»————— ★ —————««*
-Pour utiliser  une  commande, tapez  ${prefixe}"nom de la commande"
-                                                
+Pour utiliser une commande, tapez ${prefixe}"nom de la commande"
 *»»————— ★ —————««*
 `;
 
-    
-   var lien = mybotpic();
+        // Image/vidéo si dispo
+        const lien = mybotpic();
 
-   if (lien.match(/\.(mp4|gif)$/i)) {
-    try {
-        zk.sendMessage(dest, { video: { url: lien }, caption:infoMsg + menuMsg, footer: "Je suis *TDA MD*, développé par Kiyotaka" , gifPlayback : true}, { quoted: ms });
+        try {
+            if (/\.(mp4|gif)$/i.test(lien)) {
+                await zk.sendMessage(dest, {
+                    video: { url: lien },
+                    caption: infoMsg + menuMsg,
+                    gifPlayback: true
+                }, { quoted: ms });
+            } else if (/\.(jpeg|png|jpg)$/i.test(lien)) {
+                await zk.sendMessage(dest, {
+                    image: { url: lien },
+                    caption: infoMsg + menuMsg
+                }, { quoted: ms });
+            } else {
+                repondre(infoMsg + menuMsg);
+            }
+        } catch (e) {
+            console.error("🥵🥵 Menu erreur " + e);
+            repondre("🥵🥵 Menu erreur " + e);
+        }
     }
-    catch (e) {
-        console.log("🥵🥵 Menu erreur " + e);
-        repondre("🥵🥵 Menu erreur " + e);
-    }
-} 
-// Vérification pour .jpeg ou .png
-else if (lien.match(/\.(jpeg|png|jpg)$/i)) {
-    try {
-        zk.sendMessage(dest, { image: { url: lien }, caption:infoMsg + menuMsg, footer: "Je suis *Zokou-MD*, développé par Djalega++" }, { quoted: ms });
-    }
-    catch (e) {
-        console.log("🥵🥵 Menu erreur " + e);
-        repondre("🥵🥵 Menu erreur " + e);
-    }
-} 
-else {
-    
-    repondre(infoMsg + menuMsg);
-    
-}
-
-});
-
+};
