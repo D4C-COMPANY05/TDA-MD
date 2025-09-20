@@ -5,6 +5,8 @@ const qrcode = require('qrcode');
 const { makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const admin = require('firebase-admin');
+const fs = require('fs');
+const path = require('path');
 const { FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, PORT } = require('./config');
 
 const app = express();
@@ -39,14 +41,25 @@ const db = admin.firestore();
 
 const sessions = new Map();
 
-// Fonction pour redémarrer une session
+// Fonction pour démarrer une session
 async function startSession(phoneNumber, userId, socket) {
     if (sessions.has(phoneNumber)) {
         sessions.get(phoneNumber).sock.ev.removeAllListeners();
         sessions.delete(phoneNumber);
     }
 
-    const { state, saveCreds } = await useMultiFileAuthState(`./sessions/${phoneNumber}`);
+    const sessionDir = `./sessions/${phoneNumber}`;
+    let shouldLoadFromDb = false;
+    
+    // Vérifie si un dossier de session existe déjà
+    if (fs.existsSync(sessionDir)) {
+        shouldLoadFromDb = true;
+    } else {
+        // Sinon, crée le dossier pour stocker les informations
+        fs.mkdirSync(sessionDir, { recursive: true });
+    }
+
+    const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
     
     const sock = makeWASocket({
         logger: logger.child({ level: 'silent' }),
@@ -90,6 +103,8 @@ async function startSession(phoneNumber, userId, socket) {
                 logger.warn(`[Bot] Session pour ${phoneNumber} terminée. Raison: ${lastDisconnect.error}`);
                 socket.emit('error', { message: 'Session expirée. Veuillez scanner un nouveau QR code.' });
                 sessions.delete(phoneNumber);
+                // Supprime le dossier de session local
+                fs.rmSync(sessionDir, { recursive: true, force: true });
             }
             await db.collection('bots').doc(phoneNumber).update({
                 status: 'déconnecté',
