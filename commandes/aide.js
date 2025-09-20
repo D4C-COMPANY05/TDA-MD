@@ -1,16 +1,18 @@
-const command = {
-    name: '!aide',
-    description: 'Fournit de l\'aide sur l\'utilisation du bot.',
-    async execute(sock, jid) {
-        const helpMessage = `
-Je suis un bot WhatsApp simple et efficace.
-Si vous avez besoin d'aide, vous pouvez utiliser les commandes suivantes :
-- Pour une liste des commandes : !menu
-- Pour des informations sur le bot : !info
+// commandes/aide.js
+const { PREFIXE } = require('../config');
+
+module.exports = {
+  name: 'aide',
+  description: 'Affiche l’aide et les commandes disponibles',
+  action: async ({ from, sock, args, msg }) => {
+    const helpText = `
+Voici les commandes disponibles :
+
+• \`${PREFIXE}menu\` — Affiche le menu du bot et infos système.
+• \`${PREFIXE}aide\` — Affiche ce message d'aide.
+
+Ajoute d'autres commandes dans le dossier /commandes.
 `;
-        await sock.sendMessage(jid, { text: helpMessage.trim() });
-    },
+    await sock.sendMessage(from, { text: helpText }, { quoted: msg });
+  }
 };
-
-module.exports = command;
-
