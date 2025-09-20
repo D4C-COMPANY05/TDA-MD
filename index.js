@@ -1,119 +1,63 @@
-// index.js
-
+// index.js - charge les commandes et fournit un handler de base pour les messages
 const fs = require('fs');
 const path = require('path');
 const pino = require('pino');
-
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
+const { BOT, PREFIXE } = require('./config');
 
-// Collection pour stocker les commandes
 const commands = new Map();
 
-// Simulation de la variable globale `s`
-const s = {
-    BOT: "TDA-MD",
-    PREFIXE: ".",
-    NOM_OWNER: "Kiyotaka Ayanokoji",
-    MODE: "oui"
-};
+// Charge toutes les commandes du dossier ./commandes
+const commandesDir = path.join(__dirname, 'commandes');
+if (fs.existsSync(commandesDir)) {
+  const files = fs.readdirSync(commandesDir).filter(f => f.endsWith('.js'));
+  for (const file of files) {
+    try {
+      const cmdPath = path.join(commandesDir, file);
+      const cmd = require(cmdPath);
+      if (cmd && cmd.name) {
+        commands.set(cmd.name, cmd);
+        logger.info(`[index] Commande chargée: ${cmd.name}`);
+      } else {
+        logger.warn(`[index] Fichier commande ${file} ne contient pas de "name" export.`);
+      }
+    } catch (e) {
+      logger.error(`[index] Erreur chargement commande ${file}:`, e);
+    }
+  }
+} else {
+  logger.warn('[index] Dossier commandes introuvable.');
+}
 
 /**
- * Charge toutes les commandes depuis le dossier 'commandes'.
+ * Exemple générique d'un handler qui peut être branché à ton socket/baileys:
+ * - from: identifiant de la conversation
+ * - sock: instance Baileys / objet qui a sendMessage
+ * - message: texte du message
+ * - msg: objet message brut (optionnel, utilisé pour quoted)
  */
-const loadCommands = () => {
-    logger.info('🔄 Rechargement des commandes...');
-    const commandsDir = path.join(__dirname, 'commandes');
+const handleBotMessages = async ({ from, sock, message, msg = null }) => {
+  try {
+    if (!message || !message.startsWith(PREFIXE)) return;
 
-    if (!fs.existsSync(commandsDir)) {
-        logger.error(`❌ Le dossier 'commandes' est introuvable: ${commandsDir}`);
-        return;
+    const args = message.slice(PREFIXE.length).trim().split(/\s+/);
+    const commandName = args.shift().toLowerCase();
+
+    const command = commands.get(commandName);
+    if (!command) {
+      return await sock.sendMessage(from, { text: `❌ Commande inconnue. Tape ${PREFIXE}aide pour la liste.` }, { quoted: msg });
     }
 
-    commands.clear(); // Nettoyer les anciennes commandes
-    const commandFiles = fs.readdirSync(commandsDir).filter(file => file.endsWith('.js'));
-
-    for (const file of commandFiles) {
-        try {
-            const commandPath = path.join(commandsDir, file);
-
-            // Supprime l'ancienne version du cache pour recharger à chaud
-            delete require.cache[require.resolve(commandPath)];
-            const command = require(commandPath);
-
-            if (command.nomCom && command.fonction) {
-                if (Array.isArray(command.nomCom)) {
-                    command.nomCom.forEach(n => commands.set(n.toLowerCase(), command));
-                } else {
-                    commands.set(command.nomCom.toLowerCase(), command);
-                }
-                logger.info(`✅ Commande chargée: ${command.nomCom}`);
-            } else {
-                logger.warn(`⚠️ Le fichier ${file} n'exporte pas une commande valide.`);
-            }
-        } catch (error) {
-            logger.error(`❌ Erreur lors du chargement de la commande ${file}:`, error);
-        }
+    // Construis un objet contextuel simple
+    const context = { from, args, sock, msg, prefix: PREFIXE, logger };
+    logger.info(`[index] Exécution commande ${commandName} depuis ${from}`);
+    await command.action(context);
+  } catch (err) {
+    logger.error('[index] Erreur handleBotMessages:', err);
+    if (sock && from) {
+      try { await sock.sendMessage(from, { text: '⚠️ Une erreur est survenue lors de l’exécution de la commande.' }, { quoted: msg }); } catch {}
     }
+  }
 };
 
-/**
- * Gère la logique du bot, y compris l'envoi de messages et la gestion des commandes.
- * @param {import('@whiskeysockets/baileys').WASocket} sock Le socket Baileys.
- */
-const handleBotMessages = (sock) => {
-    loadCommands();
-
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
-
-        for (const msg of messages) {
-            if (!msg.message || msg.key.fromMe || msg.key.remoteJid === 'status@broadcast') return;
-
-            const from = msg.key.remoteJid;
-
-            // Récupérer le texte du message (conversation, texte étendu, légende image/vidéo, bouton…)
-            const text =
-                msg.message?.extendedTextMessage?.text ||
-                msg.message?.conversation ||
-                msg.message?.imageMessage?.caption ||
-                msg.message?.videoMessage?.caption ||
-                msg.message?.buttonsResponseMessage?.selectedButtonId ||
-                msg.message?.listResponseMessage?.singleSelectReply?.selectedRowId ||
-                '';
-
-            if (!text) continue;
-
-            // Vérifier si le texte commence par le préfixe
-            const prefix = s.PREFIXE;
-            if (!text.startsWith(prefix)) continue;
-
-            const args = text.slice(prefix.length).trim().split(/\s+/);
-            const commandName = args.shift().toLowerCase();
-            const command = commands.get(commandName);
-
-            if (command) {
-                try {
-                    const commandeOptions = {
-                        ms: msg,
-                        repondre: (msgText) => sock.sendMessage(from, { text: msgText }, { quoted: msg }),
-                        prefixe: s.PREFIXE,
-                        nomAuteurMessage: msg.pushName || 'Inconnu',
-                        mybotpic: () => "https://placehold.co/600x400/000000/FFFFFF?text=Menu",
-                        args,
-                        commands // ✅ ajouté ici pour éviter la dépendance circulaire
-                    };
-
-                    logger.info(`[Bot] Exécution de '${commandName}' par ${commandeOptions.nomAuteurMessage} (${from})`);
-                    await command.fonction(from, sock, commandeOptions);
-                } catch (error) {
-                    logger.error(`❌ Erreur lors de l'exécution de '${commandName}':`, error);
-                    await sock.sendMessage(from, { text: '⚠️ Une erreur est survenue lors de l’exécution de cette commande.' }, { quoted: msg });
-                }
-            } else {
-                await sock.sendMessage(from, { text: `❌ Commande inconnue. Tape ${prefix}help pour la liste.` }, { quoted: msg });
-            }
-        }
-    });
-};
-
-module.exports = { handleBotMessages, commands };
+module.exports = { commands, handleBotMessages, PREFIXE, BOT };
