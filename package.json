@@ -1,14 +1,13 @@
 {
-  "name": "whatsapp-baileys-firestore",
+  "name": "whatsapp-baileys-firebase-bot",
   "version": "1.0.0",
-  "description": "Serveur Express + Socket.IO avec Baileys (WhatsApp) et stockage des credentials dans Firestore",
+  "description": "Bot WhatsApp (Baileys) + server express + socket.io",
   "main": "server.js",
+  "license": "MIT",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js --watch server.js --watch .env"
+    "dev": "nodemon server.js"
   },
-  "author": "Kiyotaka Ayanokoji",
-  "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5",
@@ -24,4 +23,3 @@
     "nodemon": "^2.0.22"
   }
 }
-
