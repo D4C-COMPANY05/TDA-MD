@@ -27,36 +27,44 @@ app.get('/', (req, res) => {
 });
 
 // Initialisation de Firebase Admin
+// Assurez-vous que la clé privée est correctement formatée pour être utilisée dans un environnement
+// de production (les sauts de ligne doivent être gérés).
 const serviceAccount = {
     projectId: FIREBASE_PROJECT_ID,
     clientEmail: FIREBASE_CLIENT_EMAIL,
     privateKey: FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
 };
 
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
-});
+try {
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+    });
+    console.log('Firebase Admin SDK initialisé avec succès.');
+} catch (error) {
+    console.error('Erreur lors de l\'initialisation de Firebase Admin SDK:', error.message);
+}
 
 const db = admin.firestore();
 
 const sessions = new Map();
 
-// Fonction pour démarrer une session
+// Fonction pour démarrer une session Baileys
 async function startSession(phoneNumber, userId, socket) {
+    // Si une session existe déjà pour ce numéro, on la termine pour éviter les doublons.
     if (sessions.has(phoneNumber)) {
         sessions.get(phoneNumber).sock.ev.removeAllListeners();
         sessions.delete(phoneNumber);
     }
 
     const sessionDir = `./sessions/${phoneNumber}`;
-    let shouldLoadFromDb = false;
     
-    // Vérifie si un dossier de session existe déjà
+    // Vérifie si le dossier de session existe déjà
     if (fs.existsSync(sessionDir)) {
-        shouldLoadFromDb = true;
+        logger.info(`[Session] Reconnexion de la session pour le numéro: ${phoneNumber}`);
     } else {
         // Sinon, crée le dossier pour stocker les informations
         fs.mkdirSync(sessionDir, { recursive: true });
+        logger.info(`[Session] Nouveau dossier de session créé pour le numéro: ${phoneNumber}`);
     }
 
     const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
@@ -74,9 +82,14 @@ async function startSession(phoneNumber, userId, socket) {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            const qrCodeDataURL = await qrcode.toDataURL(qr);
-            socket.emit('qrcode', { qrCodeDataURL });
-            logger.info(`[QR] QR Code généré pour le numéro: ${phoneNumber}`);
+            try {
+                const qrCodeDataURL = await qrcode.toDataURL(qr);
+                socket.emit('qrcode', { qrCodeDataURL });
+                logger.info(`[QR] QR Code généré pour le numéro: ${phoneNumber}`);
+            } catch (e) {
+                logger.error(`[QR] Erreur lors de la génération du QR Code: ${e}`);
+                socket.emit('error', { message: 'Erreur lors de la génération du QR code.' });
+            }
         }
 
         if (connection === 'open') {
@@ -95,6 +108,7 @@ async function startSession(phoneNumber, userId, socket) {
         }
 
         if (connection === 'close') {
+            // Gère les déconnexions pour lesquelles une reconnexion n'est pas nécessaire.
             const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) {
                 logger.error(`[Bot] Déconnecté, reconnexion...`);
@@ -104,12 +118,18 @@ async function startSession(phoneNumber, userId, socket) {
                 socket.emit('error', { message: 'Session expirée. Veuillez scanner un nouveau QR code.' });
                 sessions.delete(phoneNumber);
                 // Supprime le dossier de session local
-                fs.rmSync(sessionDir, { recursive: true, force: true });
+                try {
+                    fs.rmSync(sessionDir, { recursive: true, force: true });
+                    logger.info(`[Session] Dossier de session supprimé pour ${phoneNumber}.`);
+                } catch (e) {
+                    logger.error(`[Session] Erreur lors de la suppression du dossier de session: ${e}`);
+                }
             }
+            // Met à jour le statut dans Firestore
             await db.collection('bots').doc(phoneNumber).update({
                 status: 'déconnecté',
                 lastSeen: admin.firestore.FieldValue.serverTimestamp()
-            });
+            }).catch(e => logger.error(`[Firestore] Erreur de mise à jour du statut dans Firestore: ${e}`));
         }
     });
 
@@ -126,8 +146,8 @@ async function startSession(phoneNumber, userId, socket) {
 
 io.on('connection', (socket) => {
     logger.info(`[socket] Client connecté: ${socket.id}`);
-
-    socket.on('start-pairing', (data) => {
+    
+    socket.on('request-qrcode', (data) => {
         const { phoneNumber, userId } = data;
         if (!phoneNumber || !userId) {
             socket.emit('error', { message: 'Numéro de téléphone ou ID utilisateur manquant.' });
