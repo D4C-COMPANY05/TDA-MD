@@ -3,6 +3,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const helmet = require('helmet');          // sécurise les headers HTTP
 const path = require('path');
+const cors = require('cors');
+
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -17,6 +19,7 @@ require('events').EventEmitter.defaultMaxListeners = 500;
 
 // middlewares globaux
 app.use(helmet());
+app.use(cors({ origin: '*' }));
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
