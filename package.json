@@ -6,7 +6,8 @@
   "scripts": {
     "start": "pm2 start server.js --name TDA-XMD --watch",
     "stop": "pm2 stop TDA-XMD",
-    "restart": "pm2 restart TDA-XMD"
+    "restart": "pm2 restart TDA-XMD",
+    "sass": "sass --watch public/scss:public/css"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "https://github.com/D4C-COMPANY05/Baileys",
@@ -21,9 +22,13 @@
     "pino": "^8.1.0",
     "async-mutex": "^0.4.1"
   },
+  "devDependencies": {
+    "sass": "^1.69.5"
+  },
   "engines": {
     "node": ">=18"
   },
   "author": "TDA XMD",
   "license": "MIT"
 }
+
