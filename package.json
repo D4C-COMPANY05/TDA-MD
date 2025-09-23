@@ -22,7 +22,8 @@
     "pino": "^8.1.0",
     "async-mutex": "^0.4.1",
     "helmet": "^7.0.0",
-    "cors": "^2.8.5"
+    "cors": "^2.8.5",
+    "gen-id": "^0.1.0"
   },
   "devDependencies": {
     "sass": "^1.69.5"
