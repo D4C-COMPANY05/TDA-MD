@@ -2,14 +2,14 @@
   "name": "tda-xmd",
   "version": "1.0.0",
   "description": "TDA XMD - Multi-functional WhatsApp bot with Web pairing",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
     "start": "pm2 start server.js --name TDA-XMD --watch",
     "stop": "pm2 stop TDA-XMD",
     "restart": "pm2 restart TDA-XMD"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "github:DybyTech/Baileys",
+    "@whiskeysockets/baileys": "https://github.com/D4C-COMPANY05/Baileys",
     "@adiwajshing/keyed-db": "^0.2.4",
     "qrcode": "^1.5.3",
     "awesome-phonenumber": "^2.64.0",
