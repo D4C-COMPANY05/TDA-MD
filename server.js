@@ -27,19 +27,6 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use('/server', server);
 app.use('/code', code);
 
-// routes HTML
-app.get('/pair', (req, res) => {
-  res.sendFile(path.join(__root, 'pair.html'));
-});
-
-app.get('/qr', (req, res) => {
-  res.sendFile(path.join(__root, 'qr.html'));
-});
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__root, 'main.html'));
-});
-
 // gestion des erreurs 404
 app.use((req, res, next) => {
   res.status(404).send('Page non trouvée');
