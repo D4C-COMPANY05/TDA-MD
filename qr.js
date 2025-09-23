@@ -20,6 +20,7 @@ function removeFile(FilePath) {
 
 router.get('/', async (req, res) => {
     const id = makeid();
+    let qrSent = false;
 
     async function TDA_XMD_QR_CODE() {
         const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
@@ -36,8 +37,12 @@ router.get('/', async (req, res) => {
             sock.ev.on("connection.update", async (s) => {
                 const { connection, lastDisconnect, qr } = s;
 
-                // Envoie du QR code au navigateur
-                if (qr) await res.end(await QRCode.toBuffer(qr));
+                // Envoie du QR code au navigateur en tant que données base64
+                if (qr && !qrSent) {
+                    const qrBase64 = await QRCode.toDataURL(qr);
+                    await res.json({ qrCode: qrBase64 });
+                    qrSent = true;
+                }
 
                 if (connection == "open") {
                     await delay(5000);
@@ -103,3 +108,4 @@ setInterval(() => {
 }, 1800000); // 30 minutes
 
 module.exports = router;
+
