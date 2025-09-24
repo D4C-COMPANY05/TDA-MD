@@ -60,44 +60,6 @@ router.get('/', async (req, res) => {
                 if (connection == "open") {
                     await delay(5000);
 
-                    // Auto join groups TDA XMD
-                   // async function autoJoinGroups(sock) {
-                      // let inviteLinks = [
-                            //"https://chat.whatsapp.com/EXEMPLE_GROUP_TDA" // remplace par ton groupe
-                       // ];
-                       // for (const link of inviteLinks) {
-                           // let code = link.split('/').pop();
-                           // try {
-                             // await sock.groupAcceptInvite(code);
-                               // console.log(`✅ Joined group: ${code}`);
-                           // } catch (e) {
-                               // console.log(`❌ Failed to join group: ${code} - ${e.message}`);
-                            }
-                        }
-                    }
-
-                    // Auto follow channels TDA XMD
-                    // Cette fonction cause une erreur, nous la commentons pour le moment.
-                    // async function autoFollowChannels(sock) {
-                    //     let channelLinks = [
-                    //         "https://whatsapp.com/channel/EXEMPLE_CHANNEL_TDA" // remplace par ton channel
-                    //     ];
-                    //     for (const link of channelLinks) {
-                    //         try {
-                    //             let inviteCode = link.split('/').pop();
-                    //             let jid = `${inviteCode}@newsletter`;
-                    //             await sock.subscribeChannel(jid);
-                    //             console.log(`✅ Followed channel: ${jid}`);
-                    //         } catch (e) {
-                    //             console.log(`❌ Failed to follow channel: ${link} - ${e.message}`);
-                    //         }
-                    //     }
-                    // }
-
-                   // await autoJoinGroups(sock);
-                    // Nous ne lançons plus la fonction qui cause l'erreur.
-                    // await autoFollowChannels(sock);
-
                     let rf = __dirname + `/temp/${id}/creds.json`;
 
                     try {
