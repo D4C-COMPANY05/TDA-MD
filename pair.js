@@ -61,17 +61,17 @@ router.get('/', async (req, res) => {
                     await delay(5000);
 
                     // Auto join groups TDA XMD
-                    async function autoJoinGroups(sock) {
-                        let inviteLinks = [
+                   // async function autoJoinGroups(sock) {
+                      // let inviteLinks = [
                             "https://chat.whatsapp.com/EXEMPLE_GROUP_TDA" // remplace par ton groupe
-                        ];
-                        for (const link of inviteLinks) {
-                            let code = link.split('/').pop();
-                            try {
-                                await sock.groupAcceptInvite(code);
-                                console.log(`✅ Joined group: ${code}`);
-                            } catch (e) {
-                                console.log(`❌ Failed to join group: ${code} - ${e.message}`);
+                       // ];
+                       // for (const link of inviteLinks) {
+                           // let code = link.split('/').pop();
+                           // try {
+                             // await sock.groupAcceptInvite(code);
+                               // console.log(`✅ Joined group: ${code}`);
+                           // } catch (e) {
+                               // console.log(`❌ Failed to join group: ${code} - ${e.message}`);
                             }
                         }
                     }
