@@ -4,7 +4,6 @@ const fs = require("fs");
 let email = 'd4c.company05@gmail.com'; // email du compte Mega
 let pw = 'Anne-2005-12'; // mot de passe Mega
 
-// Fonction pour uploader un fichier local sur Mega
 async function upload(stream, filename) {
     return new Promise((resolve, reject) => {
         const storage = new mega.Storage({
@@ -14,19 +13,22 @@ async function upload(stream, filename) {
 
         storage.on('ready', () => {
             console.log("✅ Mega storage ready. Starting upload...");
-            
-            // Crée un flux d'upload qui peut mettre le fichier en mémoire tampon si la taille n'est pas spécifiée.
-            const uploadStream = storage.upload({ 
+            const uploadStream = storage.upload({
                 name: filename,
-                allowUploadBuffering: true 
+                allowUploadBuffering: true
             }, stream);
 
             uploadStream.on('complete', (file) => {
                 console.log(`✅ File uploaded successfully: ${filename}`);
-                // Corrigé: On utilise l'objet 'file' retourné par l'événement 'complete'
+                // On s'assure que le lien est bien un string
                 if (file && file.link) {
-                    // On convertit explicitement le lien en chaîne de caractères
-                    resolve(file.link.toString()); 
+                    file.link((err, link) => {
+                        if (err) {
+                            return reject(err);
+                        }
+                        console.log("Generated Mega link:", link);
+                        resolve(link);
+                    });
                 } else {
                     reject(new Error("Failed to get file link from Mega upload."));
                 }
