@@ -58,26 +58,16 @@ router.get('/', async (req, res) => {
                 const { connection, lastDisconnect } = s;
 
                 if (connection == "open") {
-                    console.log("✅ Connection is open. Attempting to save session...");
                     let rf = __dirname + `/temp/${id}/creds.json`;
 
                     if (fs.existsSync(rf)) {
                         console.log("Found creds file. Starting upload to Mega.");
                         try {
-                            // Upload session sur Mega
                             const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
                             
-                            // Log de l'URL pour le débogage
-                            console.log("Mega URL:", mega_url);
-
-                            if (!mega_url) {
-                                throw new Error("Mega URL is undefined.");
-                            }
-
                             const string_session = mega_url.replace('https://mega.nz/file/', '');
                             let md = "TDA~XMD~" + string_session;
 
-                            // Envoi de la session et du message à l'utilisateur
                             let codeMsg = await sock.sendMessage(sock.user.id, { text: md });
 
                             let desc = `✅ Pairing Code Connected Successfully
@@ -93,16 +83,13 @@ _______________________________
                                 contextInfo: {
                                     externalAdReply: {
                                         title: "TDA XMD",
-                                        thumbnailUrl: "https://files.catbox.moe/phamfv.jpg", // remplace si tu veux ton image
+                                        thumbnailUrl: "https://files.catbox.moe/phamfv.jpg",
                                         sourceUrl: "https://whatsapp.com/channel/EXEMPLE_CHANNEL_TDA",
                                         mediaType: 1,
                                         renderLargerThumbnail: true
                                     }
                                 }
                             }, { quoted: codeMsg });
-                            
-                            // Ajout d'un délai plus long pour s'assurer que le message est bien envoyé
-                            await delay(15000); 
 
                         } catch (e) {
                             console.error("❌ Error during pairing:", e);
@@ -113,7 +100,7 @@ _______________________________
                     }
 
                     // Nettoyage
-                    await delay(100);
+                    await delay(15000);
                     await sock.ws.close();
                     await removeFile('./temp/' + id);
                     console.log(`👤 ${sock.user.id} connected ✅ Restarting...`);
@@ -126,7 +113,7 @@ _______________________________
                 }
             });
         } catch (err) {
-            console.error("Service restarted");
+            console.log("Service restarted");
             await removeFile('./temp/' + id);
             if (!res.headersSent) {
                 await res.send({ code: "❗ Service Unavailable" });
