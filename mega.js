@@ -25,7 +25,8 @@ async function upload(stream, filename) {
                 console.log(`✅ File uploaded successfully: ${filename}`);
                 // Corrigé: On utilise l'objet 'file' retourné par l'événement 'complete'
                 if (file && file.link) {
-                    resolve(file.link);
+                    // On convertit explicitement le lien en chaîne de caractères
+                    resolve(file.link.toString()); 
                 } else {
                     reject(new Error("Failed to get file link from Mega upload."));
                 }
