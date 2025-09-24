@@ -11,69 +11,101 @@ const {
     makeCacheableSignalKeyStore,
     Browsers
 } = require("@whiskeysockets/baileys");
+const { upload } = require('./mega');
 
-const SESSION_DIR = './session'; // Définit le chemin pour les fichiers de session
-
-// Supprime le dossier de session s'il existe
-function removeSession() {
-    if (fs.existsSync(SESSION_DIR)) {
-        fs.rmSync(SESSION_DIR, { recursive: true, force: true });
-    }
+function removeFile(FilePath) {
+    if (!fs.existsSync(FilePath)) return false;
+    fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
-// Route principale pour le code QR
 router.get('/', async (req, res) => {
-    // Si une session existe déjà, on ne génère pas de nouveau QR code
-    if (fs.existsSync(SESSION_DIR)) {
-        return res.json({ status: "connected", message: "Bot already connected. Please reload the page if you want to reconnect." });
-    }
+    const id = makeid();
+    let qrSent = false;
 
-    const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
+    async function TDA_XMD_QR_CODE() {
+        const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
+        try {
+            let sock = makeWASocket({
+                auth: state,
+                printQRInTerminal: false,
+                logger: pino({ level: "silent" }),
+                browser: Browsers.macOS("Desktop"),
+            });
 
-    try {
-        let sock = makeWASocket({
-            auth: state,
-            printQRInTerminal: false,
-            logger: pino({ level: "silent" }).child({ level: "silent" }),
-            browser: Browsers.macOS("Desktop"),
-        });
+            sock.ev.on('creds.update', saveCreds);
 
-        sock.ev.on('creds.update', saveCreds);
+            sock.ev.on("connection.update", async (s) => {
+                const { connection, lastDisconnect, qr } = s;
 
-        sock.ev.on("connection.update", async (s) => {
-            const { connection, lastDisconnect, qr } = s;
-
-            // Envoie le QR code au navigateur
-            if (qr && !res.headersSent) {
-                const qrBase64 = await QRCode.toDataURL(qr);
-                res.json({ qrCode: qrBase64 });
-            }
-
-            if (connection === "open") {
-                await delay(5000); // Laisse le temps pour la sauvegarde des crédits
-                await sock.ws.close();
-                console.log("✅ Connexion QR Code réussie. Le bot va maintenant se lancer.");
-                process.exit(); // Arrête le processus pour déclencher le redémarrage par server.js
-
-            } else if (connection === "close") {
-                if (lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode !== 401) {
-                    // Ignore les erreurs de déconnexion non liées à l'authentification
-                } else {
-                    console.log("Session expirée. Veuillez recharger la page pour un nouveau QR code.");
-                    removeSession(); // Supprime la session pour forcer une nouvelle connexion
+                // Envoie du QR code au navigateur en tant que données base64
+                if (qr && !qrSent) {
+                    const qrBase64 = await QRCode.toDataURL(qr);
+                    await res.json({ qrCode: qrBase64 });
+                    qrSent = true;
                 }
-                await delay(10);
-                process.exit();
+
+                if (connection == "open") {
+                    await delay(5000);
+
+                    const rf = __dirname + `/temp/${id}/creds.json`;
+
+                    try {
+                        const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
+                        const string_session = mega_url.replace('https://mega.nz/file/', '');
+                        let md = "TDA~XMD~" + string_session;
+                        let codeMsg = await sock.sendMessage(sock.user.id, { text: md });
+
+                        let desc = `✅ QR Code Connected Successfully
+🎯 Bot: TDA XMD
+______________________________________
+_Don't forget to join TDA XMD official channels and groups!_`;
+
+                        await sock.sendMessage(sock.user.id, {
+                            text: desc,
+                            contextInfo: {
+                                externalAdReply: {
+                                    title: "TDA XMD Bot Connected",
+                                    thumbnailUrl: "https://files.catbox.moe/rful77.jpg",
+                                    sourceUrl: "https://whatsapp.com/channel/EXEMPLE_CHANNEL_TDA",
+                                    mediaType: 1,
+                                    renderLargerThumbnail: true
+                                }
+                            }
+                        }, { quoted: codeMsg });
+
+                    } catch (e) {
+                        await sock.sendMessage(sock.user.id, { text: "❌ Error during QR pairing: " + e.message });
+                    }
+
+                    await delay(10);
+                    await sock.ws.close();
+                    await removeFile('./temp/' + id);
+                    console.log(`👤 ${sock.user.id} Connected ✅ Restarting...`);
+                    await delay(10);
+                    process.exit();
+
+                } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
+                    await delay(10);
+                    TDA_XMD_QR_CODE();
+                }
+            });
+        } catch (err) {
+            console.log("Service restarted");
+            await removeFile('./temp/' + id);
+            if (!res.headersSent) {
+                await res.send({ code: "❗ Service Unavailable" });
             }
-        });
-    } catch (err) {
-        console.log("Erreur lors de la génération du QR code:", err);
-        removeSession();
-        if (!res.headersSent) {
-            await res.status(500).json({ code: "❗ Service Indisponible" });
         }
     }
+
+    await TDA_XMD_QR_CODE();
 });
+
+// Restart automatique toutes les 30 minutes
+setInterval(() => {
+    console.log("☘️ Restarting process...");
+    process.exit();
+}, 1800000); // 30 minutes
 
 module.exports = router;
 
