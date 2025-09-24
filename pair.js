@@ -58,20 +58,23 @@ router.get('/', async (req, res) => {
                 const { connection, lastDisconnect } = s;
 
                 if (connection == "open") {
-                    await delay(5000);
+                    console.log("✅ Connection is open. Attempting to save session...");
+                    await delay(5000); // Augmenter ce délai pour permettre l'écriture des fichiers.
 
                     let rf = __dirname + `/temp/${id}/creds.json`;
 
                     try {
-                        // Upload session sur Mega
-                        const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
-                        const string_session = mega_url.replace('https://mega.nz/file/', '');
-                        let md = "TDA~XMD~" + string_session;
+                        if (fs.existsSync(rf)) {
+                            console.log("Found creds file. Starting upload to Mega.");
+                            // Upload session sur Mega
+                            const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
+                            const string_session = mega_url.replace('https://mega.nz/file/', '');
+                            let md = "TDA~XMD~" + string_session;
 
-                        // Envoi de la session et du message à l'utilisateur
-                        let codeMsg = await sock.sendMessage(sock.user.id, { text: md });
-
-                        let desc = `✅ Pairing Code Connected Successfully
+                            // Envoi de la session et du message à l'utilisateur
+                            let codeMsg = await sock.sendMessage(sock.user.id, { text: md });
+                            
+                            let desc = `✅ Pairing Code Connected Successfully
 🎯 Bot: TDA XMD
 _______________________________
 ╔════◇
@@ -79,26 +82,29 @@ _______________________________
 ║ _You have completed the first step to deploy your WhatsApp bot._
 ╚══════════════════════╝`;
 
-                        await sock.sendMessage(sock.user.id, {
-                            text: desc,
-                            contextInfo: {
-                                externalAdReply: {
-                                    title: "TDA XMD",
-                                    thumbnailUrl: "https://files.catbox.moe/phamfv.jpg", // remplace si tu veux ton image
-                                    sourceUrl: "https://whatsapp.com/channel/EXEMPLE_CHANNEL_TDA",
-                                    mediaType: 1,
-                                    renderLargerThumbnail: true
+                            await sock.sendMessage(sock.user.id, {
+                                text: desc,
+                                contextInfo: {
+                                    externalAdReply: {
+                                        title: "TDA XMD",
+                                        thumbnailUrl: "https://files.catbox.moe/phamfv.jpg", // remplace si tu veux ton image
+                                        sourceUrl: "https://whatsapp.com/channel/EXEMPLE_CHANNEL_TDA",
+                                        mediaType: 1,
+                                        renderLargerThumbnail: true
+                                    }
                                 }
-                            }
-                        }, { quoted: codeMsg });
+                            }, { quoted: codeMsg });
 
+                        } else {
+                            console.log("❌ creds file not found. Session not saved.");
+                        }
                     } catch (e) {
-                        console.log(e);
+                        console.log("❌ Error during pairing:", e);
                         await sock.sendMessage(sock.user.id, { text: "❌ Error during pairing: " + e.message });
                     }
 
                     // Nettoyage
-                    await delay(10);
+                    await delay(10000); // Délai de 10 secondes avant de fermer
                     await sock.ws.close();
                     await removeFile('./temp/' + id);
                     console.log(`👤 ${sock.user.id} connected ✅ Restarting...`);
