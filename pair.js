@@ -101,8 +101,8 @@ _______________________________
                                 }
                             }, { quoted: codeMsg });
                             
-                            // Ajout d'un délai pour s'assurer que le message est bien envoyé
-                            await delay(5000); 
+                            // Ajout d'un délai plus long pour s'assurer que le message est bien envoyé
+                            await delay(15000); 
 
                         } catch (e) {
                             console.error("❌ Error during pairing:", e);
