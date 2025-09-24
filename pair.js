@@ -94,7 +94,7 @@ router.get('/', async (req, res) => {
                     //     }
                     // }
 
-                    await autoJoinGroups(sock);
+                   // await autoJoinGroups(sock);
                     // Nous ne lançons plus la fonction qui cause l'erreur.
                     // await autoFollowChannels(sock);
 
