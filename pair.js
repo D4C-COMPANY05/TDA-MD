@@ -22,6 +22,7 @@ function removeFile(FilePath) {
 router.get('/', async (req, res) => {
     const id = makeid();
     let num = req.query.number;
+    let qrSent = false;
 
     async function TDA_XMD_PAIR_CODE() {
         const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
@@ -49,6 +50,7 @@ router.get('/', async (req, res) => {
                 const code = await sock.requestPairingCode(num);
                 if (!res.headersSent) {
                     await res.send({ code });
+                    qrSent = true;
                 }
             }
 
@@ -97,7 +99,6 @@ _______________________________
                             await sock.ws.close();
                             await removeFile('./temp/' + id);
                             console.log(`👤 ${sock.user.id} connected ✅ Restarting...`);
-                            process.exit();
                             
                         } catch (e) {
                             console.error("❌ Error during pairing:", e);
