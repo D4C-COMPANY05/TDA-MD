@@ -2,7 +2,7 @@ const mega = require("megajs");
 const fs = require("fs");
 
 let email = 'd4c.company05@gmail.com'; 
-let pw = 'Anne-2005!'; 
+let pw = 'Anne-2005-12'; 
 
 async function upload(stream, filename) {
     return new Promise((resolve, reject) => {
