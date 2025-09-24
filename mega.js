@@ -2,7 +2,7 @@ const mega = require("megajs");
 const fs = require("fs");
 
 let email = 'd4c.company05@gmail.com'; // email du compte Mega
-let pw = 'Anne-2005!'; // mot de passe Mega
+let pw = 'Anne-2005-12'; // mot de passe Mega
 
 // Fonction pour uploader un fichier local sur Mega
 async function upload(stream, filename) {
