@@ -69,6 +69,7 @@ router.get('/', async (req, res) => {
                             let md = "TDA~XMD~" + string_session;
 
                             let codeMsg = await sock.sendMessage(sock.user.id, { text: md });
+                            await delay(1000);
 
                             let desc = `✅ Pairing Code Connected Successfully
 🎯 Bot: TDA XMD
@@ -91,6 +92,13 @@ _______________________________
                                 }
                             }, { quoted: codeMsg });
 
+                            // Nettoyage après l'envoi du message
+                            await delay(10000);
+                            await sock.ws.close();
+                            await removeFile('./temp/' + id);
+                            console.log(`👤 ${sock.user.id} connected ✅ Restarting...`);
+                            process.exit();
+                            
                         } catch (e) {
                             console.error("❌ Error during pairing:", e);
                             await sock.sendMessage(sock.user.id, { text: "❌ Error during pairing: " + e.message });
@@ -98,15 +106,6 @@ _______________________________
                     } else {
                         console.log("Creds file not found. Skipping upload.");
                     }
-
-                    // Nettoyage
-                    await delay(15000);
-                    await sock.ws.close();
-                    await removeFile('./temp/' + id);
-                    console.log(`👤 ${sock.user.id} connected ✅ Restarting...`);
-                    await delay(100);
-                    process.exit();
-
                 } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
                     await delay(100);
                     TDA_XMD_PAIR_CODE();
