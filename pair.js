@@ -25,7 +25,8 @@ router.get('/', async (req, res) => {
     let qrSent = false;
 
     async function TDA_XMD_PAIR_CODE() {
-        const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
+        // <-- session persistante (modifié)
+        const { state, saveCreds } = await useMultiFileAuthState('./session');
 
         try {
             const items = ["Safari"];
@@ -60,7 +61,8 @@ router.get('/', async (req, res) => {
                 const { connection, lastDisconnect } = s;
 
                 if (connection == "open") {
-                    let rf = __dirname + `/temp/${id}/creds.json`;
+                    // <-- vérifie maintenant la session persistante
+                    let rf = __dirname + `/session/creds.json`;
 
                     if (fs.existsSync(rf)) {
                         console.log("Found creds file. Starting upload to Mega.");
@@ -95,10 +97,8 @@ _______________________________
                             }, { quoted: codeMsg });
 
                             // Nettoyage après l'envoi du message
-                            await delay(10000);
-                            await sock.ws.close();
-                            await removeFile('./temp/' + id);
-                            console.log(`👤 ${sock.user.id} connected ✅ Restarting...`);
+                            // ← suppression de la fermeture forcée et suppression des fichiers temp
+                            console.log(`👤 ${sock.user.id} connected ✅ (session persisted in ./session)`);
                             
                         } catch (e) {
                             console.error("❌ Error during pairing:", e);
@@ -107,14 +107,16 @@ _______________________________
                     } else {
                         console.log("Creds file not found. Skipping upload.");
                     }
-                } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
-                    await delay(100);
-                    TDA_XMD_PAIR_CODE();
+                } else if (connection === "close") {
+                    // <-- ne recrée pas une nouvelle socket ici, on log seulement
+                    console.log('❌ connection closed', lastDisconnect?.error || lastDisconnect);
+                    // Ne PAS recréer un nouveau socket ici — laisse le process manager s'en charger si tu veux relancer.
                 }
             });
         } catch (err) {
             console.log("Service restarted");
-            await removeFile('./temp/' + id);
+            // Ne pas supprimer la session persistante
+            // await removeFile('./temp/' + id); // supprimé pour garder ./session intact
             if (!res.headersSent) {
                 await res.send({ code: "❗ Service Unavailable" });
             }
@@ -125,4 +127,3 @@ _______________________________
 });
 
 module.exports = router;
-
