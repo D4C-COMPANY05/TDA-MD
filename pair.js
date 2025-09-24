@@ -63,7 +63,7 @@ router.get('/', async (req, res) => {
                     // Auto join groups TDA XMD
                    // async function autoJoinGroups(sock) {
                       // let inviteLinks = [
-                            "https://chat.whatsapp.com/EXEMPLE_GROUP_TDA" // remplace par ton groupe
+                            //"https://chat.whatsapp.com/EXEMPLE_GROUP_TDA" // remplace par ton groupe
                        // ];
                        // for (const link of inviteLinks) {
                            // let code = link.split('/').pop();
