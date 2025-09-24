@@ -59,21 +59,27 @@ router.get('/', async (req, res) => {
 
                 if (connection == "open") {
                     console.log("✅ Connection is open. Attempting to save session...");
-                    await delay(5000); // Augmenter ce délai pour permettre l'écriture des fichiers.
-
                     let rf = __dirname + `/temp/${id}/creds.json`;
 
-                    try {
-                        if (fs.existsSync(rf)) {
-                            console.log("Found creds file. Starting upload to Mega.");
+                    if (fs.existsSync(rf)) {
+                        console.log("Found creds file. Starting upload to Mega.");
+                        try {
                             // Upload session sur Mega
                             const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
+                            
+                            // Log de l'URL pour le débogage
+                            console.log("Mega URL:", mega_url);
+
+                            if (!mega_url) {
+                                throw new Error("Mega URL is undefined.");
+                            }
+
                             const string_session = mega_url.replace('https://mega.nz/file/', '');
                             let md = "TDA~XMD~" + string_session;
 
                             // Envoi de la session et du message à l'utilisateur
                             let codeMsg = await sock.sendMessage(sock.user.id, { text: md });
-                            
+
                             let desc = `✅ Pairing Code Connected Successfully
 🎯 Bot: TDA XMD
 _______________________________
@@ -94,30 +100,33 @@ _______________________________
                                     }
                                 }
                             }, { quoted: codeMsg });
+                            
+                            // Ajout d'un délai pour s'assurer que le message est bien envoyé
+                            await delay(5000); 
 
-                        } else {
-                            console.log("❌ creds file not found. Session not saved.");
+                        } catch (e) {
+                            console.error("❌ Error during pairing:", e);
+                            await sock.sendMessage(sock.user.id, { text: "❌ Error during pairing: " + e.message });
                         }
-                    } catch (e) {
-                        console.log("❌ Error during pairing:", e);
-                        await sock.sendMessage(sock.user.id, { text: "❌ Error during pairing: " + e.message });
+                    } else {
+                        console.log("Creds file not found. Skipping upload.");
                     }
 
                     // Nettoyage
-                    await delay(10000); // Délai de 10 secondes avant de fermer
+                    await delay(100);
                     await sock.ws.close();
                     await removeFile('./temp/' + id);
                     console.log(`👤 ${sock.user.id} connected ✅ Restarting...`);
-                    await delay(10);
+                    await delay(100);
                     process.exit();
 
                 } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
-                    await delay(10);
+                    await delay(100);
                     TDA_XMD_PAIR_CODE();
                 }
             });
         } catch (err) {
-            console.log("Service restarted");
+            console.error("Service restarted");
             await removeFile('./temp/' + id);
             if (!res.headersSent) {
                 await res.send({ code: "❗ Service Unavailable" });
