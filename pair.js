@@ -1,114 +1,135 @@
+// pair.js (MODIFIÉ)
 const { makeid } = require('./gen-id');
 const express = require('express');
 const fs = require('fs');
 let router = express.Router();
-const pino = require("pino");
-const {
-  default: makeWASocket,
-  useMultiFileAuthState,
-  delay,
-  Browsers,
-  makeCacheableSignalKeyStore,
-} = require('@whiskeysockets/baileys');
+const pino = require('pino');
+const { default: makeWASocket, useMultiFileAuthState, delay, Browsers, makeCacheableSignalKeyStore } = require('@whiskeysockets/baileys');
 const { upload } = require('./mega');
 
-// Supprimer un fichier ou dossier
+// Simple in-memory lock map to prevent concurrent pairings for same number
+const pairingLocks = {}; // number -> sessionId
+
 function removeFile(FilePath) {
   if (!fs.existsSync(FilePath)) return false;
   fs.rmSync(FilePath, { recursive: true, force: true });
 }
 
-// Route principale pour pairing
 router.get('/', async (req, res) => {
-  const id = makeid();                       // nouvel ID unique
-  let num = req.query.number;
-  let sessionPath = `./session/${id}`;       // chaque utilisateur a son propre dossier
+  const id = makeid();
+  let num = (req.query.number || '').toString();
+  if (!num) return res.status(400).json({ error: 'number query param required' });
 
-  async function TDA_XMD_PAIR_CODE() {
+  num = num.replace(/[^0-9]/g, '');
+
+  // Prevent concurrent pairing for same number
+  if (pairingLocks[num]) return res.status(409).json({ error: 'Pairing already in progress for this number' });
+  pairingLocks[num] = id;
+
+  const sessionPath = `./session/${id}`;
+  try {
+    fs.mkdirSync(sessionPath, { recursive: true });
     const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
 
-    try {
-      const items = ["Safari"];
-      const randomItem = items[Math.floor(Math.random() * items.length)];
+    const items = ["Safari"];
+    const randomItem = items[Math.floor(Math.random() * items.length)];
 
-      let sock = makeWASocket({
-        auth: {
-          creds: state.creds,
-          keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
-        },
-        printQRInTerminal: false,
-        generateHighQualityLinkPreview: true,
-        logger: pino({ level: "fatal" }).child({ level: "fatal" }),
-        browser: Browsers.macOS("Desktop"),
-      });
+    let sock = makeWASocket({
+      auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }).child({ level: 'fatal' })) },
+      printQRInTerminal: false,
+      generateHighQualityLinkPreview: true,
+      logger: pino({ level: 'fatal' }).child({ level: 'fatal' }),
+      syncFullHistory: false,
+      browser: Browsers.macOS(randomItem),
+    });
 
-      // Envoyer le code d'appariement au navigateur
-      if (!sock.authState.creds.registered) {
-        let code = await sock.requestPairingCode(num);
-        if (!res.headersSent) {
-          res.json({ code: code });
-        }
-      }
+    // WebSocket errors
+    sock.ws?.on('error', (err) => {
+      console.error('[pair.js] ws error:', err);
+    });
 
-      sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', saveCreds);
 
-      sock.ev.on("connection.update", async (s) => {
-        const { connection, lastDisconnect } = s;
+    let responded = false;
+    let requested = false;
 
-        if (connection === "open") {
-          console.log(`👤 ${sock.user.id} connected ✅ (session persisted in ${sessionPath})`);
+    // Wait for socket handshake / open
+    sock.ev.on('connection.update', async (update) => {
+      try {
+        console.log('[pair.js] connection.update', update);
+        const { connection, lastDisconnect } = update;
 
-          // Télécharger les identifiants sur Mega (si le fichier de crédits existe)
-          if (fs.existsSync(sessionPath + '/creds.json')) {
+        if (connection === 'open') {
+          // As soon as socket is open, request pairing code (if not registered)
+          if (!sock.authState?.creds?.registered && !requested) {
+            requested = true;
             try {
-              let codeMsg = await sock.sendMessage(sock.user.id, {
-                text: `TDA XMD a été connecté avec succès.`,
-                contextInfo: {
-                  externalAdReply: {
-                    title: 'TDA XMD',
-                    body: "Développé par TDA",
-                    thumbnailUrl: "https://telegra.ph/file/0259b109556dd2d580190.jpg",
-                    sourceUrl: "https://whatsapp.com/channel/EXEMPLE_CHANNEL_TDA",
-                    mediaType: 1,
-                    renderLargerThumbnail: true
-                  }
-                }
-              }, { quoted: codeMsg });
-
-              console.log(`👤 ${sock.user.id} connected ✅ (session persisted in ${sessionPath})`);
-
-            } catch (e) {
-              console.error("❌ Erreur durant l'appariement:", e);
-              await sock.sendMessage(sock.user.id, { text: "❌ Erreur durant l'appariement: " + e.message });
+              const code = await sock.requestPairingCode(num);
+              if (!responded && !res.headersSent) {
+                responded = true;
+                res.json({ code, sessionId: id });
+              }
+            } catch (err) {
+              console.error('[pair.js] requestPairingCode error:', err);
+              if (!responded && !res.headersSent) {
+                responded = true;
+                res.status(500).json({ error: 'Failed to request pairing code', details: err.message });
+              }
             }
           } else {
-            console.log("Fichier de crédits non trouvé. Le téléchargement est ignoré.");
-          }
-        } else if (connection === "close") {
-          console.log('❌ connexion fermée', lastDisconnect?.error || lastDisconnect);
-
-          // Gérer l'erreur "Stream Error" - code 515 ou la "Connexion fermée" - code 428
-          if (lastDisconnect?.error?.output?.statusCode === 515 || lastDisconnect?.error?.output?.statusCode === 428) {
-            console.log("⚠️ Session corrompue. Réinitialisation en cours...");
-            removeFile(sessionPath);
-
-            if (!res.headersSent) {
-              // On informe juste le client HTTP de réessayer
-              res.json({ code: "🔄 Session réinitialisée, l'appariement est de nouveau requis", sessionId: id });
+            // If already registered, tell client session exists
+            if (!responded && !res.headersSent) {
+              responded = true;
+              res.json({ message: 'Session already registered', sessionId: id });
             }
           }
         }
-      });
-    } catch (err) {
-      console.log("Service redémarré", err);
-      if (!res.headersSent) {
-        res.status(503).json({ code: "❗ Service non disponible" });
-      }
-    }
-  }
 
-  return await TDA_XMD_PAIR_CODE();
+        if (connection === 'close') {
+          console.log('[pair.js] connection closed', lastDisconnect?.error || lastDisconnect);
+          if (lastDisconnect?.error?.output?.statusCode === 515) {
+            console.warn('[pair.js] Detected 515 -> removing session');
+            try { removeFile(sessionPath); } catch (e) { console.error(e); }
+            if (!responded && !res.headersSent) {
+              responded = true;
+              res.json({ code: '🔄 Session reset, re-pair required', sessionId: id });
+            }
+          } else {
+            // other closes: ensure client isn't left hanging
+            if (!responded && !res.headersSent) {
+              responded = true;
+              res.status(503).json({ error: 'connection closed', details: lastDisconnect?.error?.toString?.() || lastDisconnect });
+            }
+          }
+        }
+
+        // When connected, try to upload creds if they exist (non-blocking)
+        if (connection === 'open') {
+          const rf = `${sessionPath}/creds.json`;
+          if (fs.existsSync(rf)) {
+            (async () => {
+              try {
+                const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
+                console.log('[pair.js] uploaded creds to mega', mega_url);
+              } catch (e) {
+                console.error('[pair.js] upload error', e);
+              }
+            })();
+          }
+        }
+
+      } catch (e) {
+        console.error('[pair.js] connection.update handler error', e);
+      }
+    });
+
+  } catch (err) {
+    console.error('[pair.js] main error', err);
+    if (!res.headersSent) res.status(503).json({ code: '❗ Service Unavailable', error: err.message });
+  } finally {
+    // release lock
+    if (pairingLocks[num] === id) delete pairingLocks[num];
+  }
 });
 
 module.exports = router;
-
