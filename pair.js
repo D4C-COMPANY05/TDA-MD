@@ -39,26 +39,14 @@ router.get('/', async (req, res) => {
         printQRInTerminal: false,
         generateHighQualityLinkPreview: true,
         logger: pino({ level: "fatal" }).child({ level: "fatal" }),
-        syncFullHistory: false,
-        browser: Browsers.macOS(randomItem),
+        browser: Browsers.macOS("Desktop"),
       });
 
-      // hook erreurs WebSocket
-      sock.ws?.on('error', (err) => {
-        console.error('WebSocket error:', err);
-      });
-
-      // Demande le pairing code si le compte n'est pas encore enregistré
+      // Envoyer le code d'appariement au navigateur
       if (!sock.authState.creds.registered) {
-        if (!num) {
-          return !res.headersSent && res.status(400).json({ error: 'Missing number parameter' });
-        }
-
-        await delay(1500);
-        num = num.replace(/[^0-9]/g, '');
-        const code = await sock.requestPairingCode(num);
+        let code = await sock.requestPairingCode(num);
         if (!res.headersSent) {
-          res.json({ code, sessionId: id }); // on retourne aussi l'id de session
+          res.json({ code: code });
         }
       }
 
@@ -68,33 +56,18 @@ router.get('/', async (req, res) => {
         const { connection, lastDisconnect } = s;
 
         if (connection === "open") {
-          let rf = `${sessionPath}/creds.json`;
+          console.log(`👤 ${sock.user.id} connected ✅ (session persisted in ${sessionPath})`);
 
-          if (fs.existsSync(rf)) {
-            console.log("Found creds file. Starting upload to Mega.");
+          // Télécharger les identifiants sur Mega (si le fichier de crédits existe)
+          if (fs.existsSync(sessionPath + '/creds.json')) {
             try {
-              const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
-
-              const string_session = mega_url.replace('https://mega.nz/file/', '');
-              let md = "TDA~XMD~" + string_session;
-
-              let codeMsg = await sock.sendMessage(sock.user.id, { text: md });
-              await delay(1000);
-
-              let desc = `✅ Pairing Code Connected Successfully
-🎯 Bot: TDA XMD
-_______________________________
-╔════◇
-║ *『 𝗧𝗗𝗔 𝗫𝗠𝗗 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗦𝗨𝗖𝗖𝗘𝗦𝗦 』*
-║ _You have completed the first step to deploy your WhatsApp bot._
-╚══════════════════════╝`;
-
-              await sock.sendMessage(sock.user.id, {
-                text: desc,
+              let codeMsg = await sock.sendMessage(sock.user.id, {
+                text: `TDA XMD a été connecté avec succès.`,
                 contextInfo: {
                   externalAdReply: {
-                    title: "TDA XMD",
-                    thumbnailUrl: "https://files.catbox.moe/phamfv.jpg",
+                    title: 'TDA XMD',
+                    body: "Développé par TDA",
+                    thumbnailUrl: "https://telegra.ph/file/0259b109556dd2d580190.jpg",
                     sourceUrl: "https://whatsapp.com/channel/EXEMPLE_CHANNEL_TDA",
                     mediaType: 1,
                     renderLargerThumbnail: true
@@ -105,32 +78,31 @@ _______________________________
               console.log(`👤 ${sock.user.id} connected ✅ (session persisted in ${sessionPath})`);
 
             } catch (e) {
-              console.error("❌ Error during pairing:", e);
-              await sock.sendMessage(sock.user.id, { text: "❌ Error during pairing: " + e.message });
+              console.error("❌ Erreur durant l'appariement:", e);
+              await sock.sendMessage(sock.user.id, { text: "❌ Erreur durant l'appariement: " + e.message });
             }
           } else {
-            console.log("Creds file not found. Skipping upload.");
+            console.log("Fichier de crédits non trouvé. Le téléchargement est ignoré.");
           }
         } else if (connection === "close") {
-          console.log('❌ connection closed', lastDisconnect?.error || lastDisconnect);
+          console.log('❌ connexion fermée', lastDisconnect?.error || lastDisconnect);
 
-          // Handle "Stream Error" - code 515
-          if (lastDisconnect?.error?.output?.statusCode === 515) {
-            console.log("⚠️ Session corrompue (code 515). Reset en cours...");
+          // Gérer l'erreur "Stream Error" - code 515 ou la "Connexion fermée" - code 428
+          if (lastDisconnect?.error?.output?.statusCode === 515 || lastDisconnect?.error?.output?.statusCode === 428) {
+            console.log("⚠️ Session corrompue. Réinitialisation en cours...");
             removeFile(sessionPath);
 
             if (!res.headersSent) {
-              // on informe juste le client HTTP de réessayer
-              res.json({ code: "🔄 Session reset, re-pair required", sessionId: id });
+              // On informe juste le client HTTP de réessayer
+              res.json({ code: "🔄 Session réinitialisée, l'appariement est de nouveau requis", sessionId: id });
             }
-            // ❌ on ne relance plus TDA_XMD_PAIR_CODE ici (pas de boucle infinie)
           }
         }
       });
     } catch (err) {
-      console.log("Service restarted", err);
+      console.log("Service redémarré", err);
       if (!res.headersSent) {
-        res.status(503).json({ code: "❗ Service Unavailable" });
+        res.status(503).json({ code: "❗ Service non disponible" });
       }
     }
   }
@@ -139,3 +111,4 @@ _______________________________
 });
 
 module.exports = router;
+
