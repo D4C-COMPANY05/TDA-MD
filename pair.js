@@ -20,12 +20,12 @@ function removeFile(FilePath) {
 
 // Route principale pour pairing
 router.get('/', async (req, res) => {
-    const id = makeid();
+    const id = makeid();                       // nouvel ID unique
     let num = req.query.number;
-    let qrSent = false;
+    let sessionPath = `./session/${id}`;       // chaque utilisateur a son propre dossier
 
     async function TDA_XMD_PAIR_CODE() {
-        const { state, saveCreds } = await useMultiFileAuthState('./session');
+        const { state, saveCreds } = await useMultiFileAuthState(sessionPath);
 
         try {
             const items = ["Safari"];
@@ -49,8 +49,7 @@ router.get('/', async (req, res) => {
                 num = num.replace(/[^0-9]/g, '');
                 const code = await sock.requestPairingCode(num);
                 if (!res.headersSent) {
-                    await res.send({ code });
-                    qrSent = true;
+                    await res.send({ code, sessionId: id });  // on retourne aussi l'id de session
                 }
             }
 
@@ -60,7 +59,7 @@ router.get('/', async (req, res) => {
                 const { connection, lastDisconnect } = s;
 
                 if (connection == "open") {
-                    let rf = __dirname + `/session/creds.json`;
+                    let rf = `${sessionPath}/creds.json`;
 
                     if (fs.existsSync(rf)) {
                         console.log("Found creds file. Starting upload to Mega.");
@@ -94,7 +93,7 @@ _______________________________
                                 }
                             }, { quoted: codeMsg });
 
-                            console.log(`👤 ${sock.user.id} connected ✅ (session persisted in ./session)`);
+                            console.log(`👤 ${sock.user.id} connected ✅ (session persisted in ${sessionPath})`);
                             
                         } catch (e) {
                             console.error("❌ Error during pairing:", e);
@@ -107,21 +106,21 @@ _______________________________
                     console.log('❌ connection closed', lastDisconnect?.error || lastDisconnect);
 
                     // Handle "Stream Error" - code 515
-                    if (lastDisconnect.error && lastDisconnect.error.output && lastDisconnect.error.output.statusCode === 515) {
+                    if (lastDisconnect?.error?.output?.statusCode === 515) {
                         console.log("⚠️ Session corrompue (code 515). Reset en cours...");
-                        removeFile('./session');
+                        removeFile(sessionPath);
 
                         if (!res.headersSent) {
-                            res.send({ code: "🔄 Session reset, re-pair required" });
+                            // on informe juste le client HTTP de réessayer
+                            res.send({ code: "🔄 Session reset, re-pair required", sessionId: id });
                         }
 
-                        // Redémarre le process de pairing
-                        TDA_XMD_PAIR_CODE();
+                        // ❌ on ne relance plus TDA_XMD_PAIR_CODE ici (pas de boucle infinie)
                     }
                 }
             });
         } catch (err) {
-            console.log("Service restarted");
+            console.log("Service restarted", err);
             if (!res.headersSent) {
                 await res.send({ code: "❗ Service Unavailable" });
             }
