@@ -105,6 +105,19 @@ _______________________________
                     }
                 } else if (connection === "close") {
                     console.log('❌ connection closed', lastDisconnect?.error || lastDisconnect);
+
+                    // Handle "Stream Error" - code 515
+                    if (lastDisconnect.error && lastDisconnect.error.output && lastDisconnect.error.output.statusCode === 515) {
+                        console.log("⚠️ Session corrompue (code 515). Reset en cours...");
+                        removeFile('./session');
+
+                        if (!res.headersSent) {
+                            res.send({ code: "🔄 Session reset, re-pair required" });
+                        }
+
+                        // Redémarre le process de pairing
+                        TDA_XMD_PAIR_CODE();
+                    }
                 }
             });
         } catch (err) {
@@ -119,4 +132,3 @@ _______________________________
 });
 
 module.exports = router;
-
