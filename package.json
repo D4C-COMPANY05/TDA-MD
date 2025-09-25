@@ -10,7 +10,7 @@
     "sass": "sass --watch public/scss:public/css"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "https://github.com/D4C-COMPANY05/Baileys",
+    "@whiskeysockets/baileys": "^6.6.0",
     "@adiwajshing/keyed-db": "^0.2.4",
     "qrcode": "^1.5.3",
     "awesome-phonenumber": "^2.64.0",
