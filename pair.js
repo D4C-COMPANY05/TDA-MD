@@ -25,7 +25,6 @@ router.get('/', async (req, res) => {
     let qrSent = false;
 
     async function TDA_XMD_PAIR_CODE() {
-        // <-- session persistante (modifié)
         const { state, saveCreds } = await useMultiFileAuthState('./session');
 
         try {
@@ -61,7 +60,6 @@ router.get('/', async (req, res) => {
                 const { connection, lastDisconnect } = s;
 
                 if (connection == "open") {
-                    // <-- vérifie maintenant la session persistante
                     let rf = __dirname + `/session/creds.json`;
 
                     if (fs.existsSync(rf)) {
@@ -96,8 +94,6 @@ _______________________________
                                 }
                             }, { quoted: codeMsg });
 
-                            // Nettoyage après l'envoi du message
-                            // ← suppression de la fermeture forcée et suppression des fichiers temp
                             console.log(`👤 ${sock.user.id} connected ✅ (session persisted in ./session)`);
                             
                         } catch (e) {
@@ -108,15 +104,11 @@ _______________________________
                         console.log("Creds file not found. Skipping upload.");
                     }
                 } else if (connection === "close") {
-                    // <-- ne recrée pas une nouvelle socket ici, on log seulement
                     console.log('❌ connection closed', lastDisconnect?.error || lastDisconnect);
-                    // Ne PAS recréer un nouveau socket ici — laisse le process manager s'en charger si tu veux relancer.
                 }
             });
         } catch (err) {
             console.log("Service restarted");
-            // Ne pas supprimer la session persistante
-            // await removeFile('./temp/' + id); // supprimé pour garder ./session intact
             if (!res.headersSent) {
                 await res.send({ code: "❗ Service Unavailable" });
             }
@@ -127,3 +119,4 @@ _______________________________
 });
 
 module.exports = router;
+
