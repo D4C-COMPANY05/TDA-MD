@@ -22,7 +22,7 @@ router.get('/', async (req, res) => {
     const id = makeid();
     let num = req.query.number;
 
-    async function TDA_XMD_PAIR_CODE() {
+    async function GIFTED_MD_PAIR_CODE() {
         const { state, saveCreds } = await useMultiFileAuthState('./temp/' + id);
 
         try {
@@ -98,29 +98,31 @@ router.get('/', async (req, res) => {
                     try {
                         const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
                         const string_session = mega_url.replace('https://mega.nz/file/', '');
-                        let md = "TDA~XMD~" + string_session;
+                        let md = "INFINITY~MD~" + string_session;
                         let code = await sock.sendMessage(sock.user.id, { text: md });
 
-                        let desc = `✅ *TDA XMD – Pair Code Connected Successfully*
+                        let desc = `𝙿𝚊𝚒𝚛 𝙲𝚘𝚍𝚎 𝙲𝚘𝚗𝚗𝚎𝚌𝚝𝚎𝚍 𝚂𝚞𝚌𝚌𝚎𝚜𝚜𝚏𝚞𝚕𝚕𝚢
+𝙼𝚊𝚍𝚎 𝚆𝚒𝚝𝚑 𝙼𝙴𝙶𝙰𝙻𝙾𝙳𝙾𝙽 𝙼𝙳 🤍
 _______________________________
 ╔════◇
-║ *『 𝚆𝙴𝙻𝙲𝙾𝙼𝙴 𝚃𝙾 𝚃𝙳𝙰 𝚇𝙼𝙳 』*
-║ _Vous avez complété la première étape pour déployer un bot WhatsApp._
+║ *『 𝚆𝙾𝚆 𝚈𝙾𝚄'𝚅𝙴 𝙲𝙷𝙾𝚂𝙴𝙽 𝙼𝙴𝙶𝙰𝙻𝙾𝙳𝙾𝙽 𝙼𝙳』*
+║ _𝚈𝚘𝚞 𝙷𝚊𝚟𝚎 𝙲𝚘𝚖𝚙𝚕𝚎𝚝𝚎𝚍 𝚝𝚑𝚎 𝙵𝚒𝚛𝚜𝚝 𝚂𝚝𝚎𝚙 𝚝𝚘 𝙳𝚎𝚙𝚕𝚘𝚢 𝚊 𝚆𝚑𝚊𝚝𝚜𝚊𝚙𝚙 𝙱𝚘𝚝._
 ╚══════════════════════╝
 ╔═════◇
-║  『••• 𝗩𝗶𝘀𝗶𝘁 𝗙𝗼𝗿 𝗛𝗲𝗹𝗽 •••』
+║  『••• 𝗩𝗶𝘀𝗶𝘁 𝗙𝗼𝗿 𝗛𝗲𝗹𝗽 •••』
 ║❒ 𝚈𝚝𝚞𝚋𝚎: https://youtube.com/@dybytech00
 ║❒ 𝙾𝚠𝚗𝚎𝚛: https://wa.me/50934960331
 ║❒ 𝚁𝚎𝚙𝚘: https://github.com/DybyTech/MEGALODON-MD
 ║❒ 𝚆𝚊𝙲𝚑𝚊𝚗𝚗𝚎𝚕: https://whatsapp.com/channel/0029VbAdcIXJP216dKW1253g
+║❒ 𝚃𝙷𝙰𝙽𝙺𝚂 𝚃𝙾: 𝚆𝙰𝚂𝙸 𝚃𝙴𝙲𝙷 
 ╚══════════════════════╝`;
 
                         await sock.sendMessage(sock.user.id, {
                             text: desc,
                             contextInfo: {
                                 externalAdReply: {
-                                    title: "TDA XMD",
-                                    thumbnailUrl: "https://files.catbox.moe/phamfv.jpg", // ton image
+                                    title: "MEGALODON-MD",
+                                    thumbnailUrl: "https://files.catbox.moe/phamfv.jpg",
                                     sourceUrl: "https://whatsapp.com/channel/0029VbAdcIXJP216dKW1253g",
                                     mediaType: 1,
                                     renderLargerThumbnail: true
@@ -130,12 +132,12 @@ _______________________________
 
                     } catch (e) {
                         let ddd = await sock.sendMessage(sock.user.id, { text: e.message || String(e) });
-                        let desc = `*Ne partagez ce code avec personne. Il est utilisé pour déployer TDA XMD.*`;
+                        let desc = `*Don't Share with anyone this code use for deploying 𝕷𝕬𝕯𝖄𝕭𝖀𝕲 𝕸𝕯 1.0.0*\n\n ◦ *Github:* https://github.com/mrntandooofc/Ladybug-MD`;
                         await sock.sendMessage(sock.user.id, {
                             text: desc,
                             contextInfo: {
                                 externalAdReply: {
-                                    title: "TDA XMD",
+                                    title: "Ladybug-MD",
                                     thumbnailUrl: "https://files.catbox.moe/frns4k.jpg",
                                     sourceUrl: "https://whatsapp.com/channel/0029VbAdcIXJP216dKW1253g",
                                     mediaType: 2,
@@ -146,22 +148,27 @@ _______________________________
                         }, { quoted: ddd });
                     }
 
-                    // On garde la session active
-                    console.log(`👤 ${sock.user.id} connected ✅ TDA XMD session active...`);
+                    await delay(10);
+                    await sock.ws.close();
+                    await removeFile('./temp/' + id);
+                    console.log(`👤 ${sock.user.id} connected ✅ Restarting...`);
+                    await delay(10);
+                    process.exit();
                 } else if (connection === "close" && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode != 401) {
                     await delay(10);
-                    TDA_XMD_PAIR_CODE();
+                    GIFTED_MD_PAIR_CODE();
                 }
             });
         } catch (err) {
             console.log("service restarted");
+            await removeFile('./temp/' + id);
             if (!res.headersSent) {
                 await res.send({ code: "❗ Service Unavailable" });
             }
         }
     }
 
-    return await TDA_XMD_PAIR_CODE();
+    return await GIFTED_MD_PAIR_CODE();
 });
 
 module.exports = router;
