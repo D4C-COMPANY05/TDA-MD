@@ -1,49 +1,50 @@
+// Importations de modules
 const express = require('express');
-const cors = require('cors');
+const cors = require('cors'); 
 const app = express();
-__path = process.cwd();
 const bodyParser = require("body-parser");
+
+// Configuration de base
 const PORT = process.env.PORT || 8000;
+const __path = process.cwd();
 
-// tes routes Node
-let server = require('./qr'),
-    code = require('./pair');
+// Importation des modules de routage locaux
+let server = require('./qr'), 
+    code = require('./pair'); 
+    
+// --- Middlewares ---
+// Middleware CORS : essentiel pour les requêtes cross-origin
+app.use(cors()); 
 
-// augmente le max listeners pour éviter les warnings
-require('events').EventEmitter.defaultMaxListeners = 500;
-
-// active CORS pour permettre les appels cross-domain
-app.use(cors());
-
-// parsers
+// Middleware Body Parser : pour traiter les corps de requêtes (JSON et URL-encoded)
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// monte tes routes back
+// --- Routes des modules ---
 app.use('/server', server);
 app.use('/code', code);
 
-// redirection vers ton front hébergé sur un autre domaine
-const FRONT_DOMAIN = 'https://tda-md.vercel.app/'; // <-- remplace par ton vrai domaine
+// --- Routes des fichiers HTML statiques ---
 
-app.get('/pair', (req, res) => {
-  res.redirect(FRONT_DOMAIN + '/pair.html');
+// Route pour l'appariement
+app.use('/pair', (req, res) => {
+    res.sendFile(__path + '/pair.html')
 });
 
-app.get('/qr', (req, res) => {
-  res.redirect(FRONT_DOMAIN + '/qr.html');
+// Route pour le code QR
+app.use('/qr', (req, res) => {
+    res.sendFile(__path + '/qr.html')
 });
 
-app.get('/', (req, res) => {
-  res.redirect(FRONT_DOMAIN + '/main.html');
+// Route principale (racine)
+app.use('/', (req, res) => {
+    res.sendFile(__path + '/main.html')
 });
 
-// démarre le serveur
+// --- Démarrage du serveur ---
 app.listen(PORT, () => {
-  console.log(`
-✅ TDA XMD Server running on http://localhost:${PORT}
-(⭐ N'oubliez pas de soutenir le projet TDA XMD sur GitHub)
-`);
-});
+    console.log(`Serveur Express démarré sur http://localhost:${PORT}`)
+})
 
-module.exports = app;
+module.exports = app
+
