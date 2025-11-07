@@ -1,36 +1,26 @@
 {
-  "name": "tda-xmd",
+  "name": "shika-md-login",
   "version": "1.0.0",
-  "description": "TDA XMD - Multi-functional WhatsApp bot with Web pairing",
+  "description": "Backend WebSocket pour Shika-MD login (QR / Pairing / Session) — Express + Baileys",
   "main": "server.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "pm2 start server.js --name TDA-XMD --watch",
-    "stop": "pm2 stop TDA-XMD",
-    "restart": "pm2 restart TDA-XMD",
-    "sass": "sass --watch public/scss:public/css"
-  },
-  "dependencies": {
-    "@whiskeysockets/baileys": "^6.6.0",
-    "@adiwajshing/keyed-db": "^0.2.4",
-    "qrcode": "^1.5.3",
-    "awesome-phonenumber": "^2.64.0",
-    "phone": "^3.1.30",
-    "body-parser": "^1.20.1",
-    "express": "^4.18.1",
-    "path": "^0.12.7",
-    "megajs": "^1.1.7",
-    "pino": "^8.1.0",
-    "async-mutex": "^0.4.1",
-    "helmet": "^7.0.0",
-    "cors": "^2.8.5"
-  },
-  "devDependencies": {
-    "sass": "^1.69.5"
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "start:dev": "nodemon server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=16"
   },
-  "author": "TDA XMD",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "express": "^4.18.2",
+    "qrcode": "^1.5.1",
+    "uuid": "^9.0.0",
+    "ws": "^8.15.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  },
   "license": "MIT"
 }
-
