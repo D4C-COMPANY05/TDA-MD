@@ -482,4 +482,134 @@
         const ok = sendIfOpen({
           type: 'request',
           content: 'pairing',
-          data: { phoneNumber: phone, customSession: useC
+          data: { phoneNumber: phone, customSession: useCustomSession.checked ? (sessionIdInput.value || '').trim() : null }
+        });
+        if (!ok) hideLoading();
+        else {
+          // show pairing UI, hide buttons
+          connectionButtons.style.display = 'none';
+          resetButton.style.display = 'flex';
+        }
+      });
+
+      // Validate session id (client -> server)
+      function validateSessionId(sessionId) {
+        qrBtn.disabled = true;
+        pairingBtn.disabled = true;
+        validationSpinner.style.display = 'none';
+
+        if (!useCustomSession.checked) {
+          sessionIdInput.classList.remove('input-valid', 'input-invalid');
+          validationMessage.textContent = '';
+          isSessionValid = false;
+          qrBtn.disabled = false;
+          pairingBtn.disabled = false;
+          return;
+        }
+
+        if (!sessionId || !sessionId.trim()) {
+          sessionIdInput.classList.add('input-invalid');
+          validationMessage.textContent = 'Session ID is required';
+          validationMessage.className = 'validation-message validation-error';
+          isSessionValid = false;
+          return;
+        }
+
+        sessionIdInput.classList.remove('input-valid', 'input-invalid');
+        validationSpinner.style.display = 'inline-block';
+        validationMessage.textContent = 'Validating...';
+        validationMessage.className = 'validation-message';
+
+        // send validate_session to server
+        sendIfOpen({ type: 'validate_session', sessionId: sessionId });
+      }
+
+      // Start connection flow (qr or pairing)
+      function startConnection(type) {
+        // If custom session selected, require validation
+        if (useCustomSession.checked && (!isSessionValid || !sessionIdInput.value.trim())) {
+          setStatus('Please enter a valid session', true);
+          sessionIdInput.classList.add('input-invalid');
+          validationMessage.textContent = 'Invalid session';
+          validationMessage.className = 'validation-message validation-error';
+          sessionIdInput.focus();
+          return;
+        }
+
+        // reset UI
+        resetDisplay();
+        currentConnectionType = type;
+        connectionButtons.style.display = 'none';
+        resetButton.style.display = 'flex';
+
+        if (type === 'qrcode') {
+          customSessionInput.classList.remove('active');
+          phoneInput.classList.remove('active');
+          showLoading('Generating QR Code...');
+          sendIfOpen({
+            type: 'request',
+            content: 'qrcode',
+            data: { customSession: useCustomSession.checked ? sessionIdInput.value.trim() : null }
+          });
+        } else if (type === 'pairing') {
+          customSessionInput.classList.remove('active');
+          phoneInput.classList.add('active');
+          setStatus('Enter your phone number to generate pairing code');
+        }
+      }
+
+      // Reset display (hide qrcode / pairing / session)
+      function resetDisplay() {
+        qrcode.classList.remove('show');
+        qrcode.src = '';
+        qrcode.style.display = 'none';
+
+        pairingCodeEl.classList.remove('show');
+        pairingCodeEl.textContent = '';
+        pairingCodeEl.style.display = 'none';
+
+        // remove simulate button if any
+        const sim = document.getElementById('simulatePairBtn');
+        if (sim) sim.remove();
+
+        sessionIdDisplay.classList.remove('active');
+      }
+
+      // Reset all (UI + send cancel to server)
+      function resetAll() {
+        resetDisplay();
+        useCustomSession.checked = false;
+        customSessionInput.classList.remove('active');
+        sessionIdInput.value = '';
+        sessionIdInput.classList.remove('input-valid', 'input-invalid');
+        phoneNumber.value = '';
+        connectionButtons.style.display = 'flex';
+        resetButton.style.display = 'none';
+        setStatus('Select a login method');
+        currentConnectionType = null;
+
+        validationSpinner.style.display = 'none';
+        validationMessage.textContent = '';
+        validationMessage.className = 'validation-message';
+
+        qrBtn.disabled = false;
+        pairingBtn.disabled = false;
+
+        sendIfOpen({ type: 'cancel' });
+      }
+
+      // expose a simple copy to clipboard on pairing code click
+      pairingCodeEl.addEventListener('click', () => {
+        const raw = pairingCodeEl.getAttribute('data-raw');
+        if (!raw) return;
+        navigator.clipboard.writeText(raw).then(() => {
+          setStatus('Pairing code copied to clipboard');
+        }).catch(()=> setStatus('Unable to copy pairing code', true));
+      });
+
+      // initial status
+      setStatus('Select a login method');
+    });
+  </script>
+</body>
+</html>
