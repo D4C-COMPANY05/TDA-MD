@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Shika-Md-session</title>
+  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <style>
@@ -27,7 +28,7 @@
     justify-content:center;
     align-items:center;
     min-height:100vh;
-    font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-family:'Inter', system-ui, -apple-system, sans-serif;
     line-height:1.6;
     -webkit-font-smoothing:antialiased;
   }
@@ -48,8 +49,8 @@
   h1 { color:var(--light); margin-bottom:2rem; font-weight:600; font-size:1.8rem; letter-spacing:0.5px; }
 
   .session-control { display:flex; align-items:center; justify-content:center; margin-bottom:1.5rem; gap:0.5rem; }
-  .custom-session-input, .phone-input { transition:all 0.35s ease; opacity:0; max-height:0; overflow:hidden; margin-bottom:1.5rem; }
-  .custom-session-input.active, .phone-input.active { opacity:1; max-height:420px; }
+  .custom-session-input, .pairing-request-input, .pairing-complete-input { transition:all 0.35s ease; opacity:0; max-height:0; overflow:hidden; margin-bottom:1.5rem; }
+  .custom-session-input.active, .pairing-request-input.active, .pairing-complete-input.active { opacity:1; max-height:420px; }
 
   input[type="text"], input[type="tel"] {
     background: rgba(30,30,30,0.8); border:1px solid rgba(255,255,255,0.1);
@@ -86,6 +87,7 @@
   .session-id {
     font-family:'Fira Code', monospace; background:rgba(0,0,0,0.3); padding:0.8rem 1.2rem; border-radius:8px;
     display:none; align-items:center; gap:0.8rem; margin-top:1rem; position:relative; z-index:1; border:1px solid rgba(124,77,255,0.12);
+    font-size: 0.85rem;
   }
   .session-id.active { display:flex; }
 
@@ -95,11 +97,11 @@
 
   #pairingCode { font-family:'Fira Code', monospace; font-size:1.4rem; letter-spacing:2px; background:linear-gradient(135deg,var(--darker),var(--dark));
     padding:1rem 1.4rem; border-radius:10px; display:none; font-weight:bold; color:#fff; border:1px solid rgba(124,77,255,0.12);
-    box-shadow:0 4px 15px rgba(0,0,0,0.2); transition:all 0.35s ease; opacity:0; position:relative; z-index:1;
+    box-shadow:0 4px 15px rgba(0,0,0,0.2); transition:all 0.35s ease; opacity:0; position:relative; z-index:1; margin-top:1rem;
   }
   #pairingCode.show { display:block; opacity:1; transform:translateY(0); }
 
-  .status { margin-top:1rem; font-size:0.95rem; color:var(--gray); position:relative; z-index:1; max-width:80%; text-align:center; }
+  .status { margin-top:1rem; font-size:0.95rem; color:var(--gray); position:relative; z-index:1; max-width:100%; text-align:center; }
 
   .loading { display:none; flex-direction:column; align-items:center; position:relative; z-index:1; }
   .spinner { width:40px; height:40px; border:3px solid rgba(124,77,255,0.12); border-top-color:var(--primary); border-radius:50%; animation:spin 1s linear infinite; margin-bottom:1rem; }
@@ -133,7 +135,7 @@
     <div class="session-control">
       <label class="checkbox-container">
         <input type="checkbox" id="useCustomSession" aria-label="Use a custom session">
-        <span>Use a custom session</span>
+        <span>Use a custom session ID</span>
       </label>
     </div>
 
@@ -145,22 +147,36 @@
       </div>
     </div>
 
-    <div class="phone-input" id="phoneInput">
-      <input type="tel" id="phoneNumber" placeholder="Enter your phone number (8-15 digits)" aria-label="Phone number">
-      <button class="btn" id="validatePhone" style="margin-top:0.8rem; width:100%;">
-        <i class="fas fa-check"></i> Validate
+    <!-- NOUVELLE ZONE: DEMANDE DE CODE DE JUMELAGE (N° de téléphone) -->
+    <div class="pairing-request-input" id="pairingRequestInput">
+      <p class="text-sm mb-2 text-gray-400">Pour obtenir un code : entrez le numéro de téléphone de votre bot.</p>
+      <input type="tel" id="phoneNumber" placeholder="Ex: 50933xxxxxx (chiffres seulement)" aria-label="Phone number">
+      <button class="btn" id="requestPairingCode" style="margin-top:0.8rem; width:100%;">
+        <i class="fas fa-arrow-right"></i> Générer le code interne
+      </button>
+    </div>
+
+    <!-- NOUVELLE ZONE: ENTRÉE MANUELLE DE CODE -->
+    <div class="pairing-complete-input" id="pairingCompleteInput">
+      <p class="text-sm mb-2 text-gray-400">Entrez le code de 8 chiffres donné par WhatsApp sur votre téléphone.</p>
+      <input type="text" id="manualPairingCode" placeholder="Code (XXXX-XXXX)" aria-label="Manual Pairing Code">
+      <button class="btn" id="completePairingBtn" style="margin-top:0.8rem; width:100%;">
+        <i class="fas fa-check"></i> Compléter la connexion
       </button>
     </div>
 
     <div class="display-area" aria-live="polite">
       <div class="loading" id="loading">
         <div class="spinner" aria-hidden="true"></div>
-        <p>Loading...</p>
+        <p>Chargement...</p>
       </div>
 
       <img src="" alt="QR Code" id="qrcode" />
 
+      <!-- L'affichage du code interne est maintenant plus clair -->
       <div id="pairingCode" aria-hidden="true"></div>
+      <button id="simulatePairBtn" class="btn" style="margin-top:10px; display:none; min-width:auto;"><i class="fas fa-check-circle"></i> Simuler la connexion avec ce code</button>
+
 
       <div class="session-id" id="sessionIdDisplay" aria-hidden="true">
         <span id="sessionIdText"></span>
@@ -169,16 +185,16 @@
         </button>
       </div>
 
-      <p class="status" id="status">Select a login method</p>
+      <p class="status" id="status">Sélectionnez une méthode de connexion</p>
     </div>
 
     <div class="buttons" id="connectionButtons">
       <button id="qrBtn" class="btn" title="Connect with QR code"><i class="fas fa-qrcode"></i> QR Code</button>
-      <button id="pairingBtn" class="btn" title="Pair with code"><i class="fas fa-link"></i> Pairing Code</button>
+      <button id="pairingBtn" class="btn" title="Pair with code"><i class="fas fa-mobile-alt"></i> Jumelage (Code)</button>
     </div>
 
     <div class="buttons" id="resetButton" style="display:none;">
-      <button id="resetBtn" class="btn btn-reset"><i class="fas fa-sync-alt"></i> Reset</button>
+      <button id="resetBtn" class="btn btn-reset"><i class="fas fa-sync-alt"></i> Réinitialiser</button>
     </div>
   </div>
 
@@ -192,11 +208,18 @@
       const qrBtn = document.getElementById('qrBtn');
       const pairingBtn = document.getElementById('pairingBtn');
       const resetBtn = document.getElementById('resetBtn');
-      const phoneInput = document.getElementById('phoneInput');
+      
+      const pairingRequestInput = document.getElementById('pairingRequestInput'); // New: Request phone
       const phoneNumber = document.getElementById('phoneNumber');
-      const validatePhone = document.getElementById('validatePhone');
+      const requestPairingCode = document.getElementById('requestPairingCode');
+      
+      const pairingCompleteInput = document.getElementById('pairingCompleteInput'); // New: Enter code
+      const manualPairingCode = document.getElementById('manualPairingCode');
+      const completePairingBtn = document.getElementById('completePairingBtn');
+      
       const qrcode = document.getElementById('qrcode');
       const pairingCodeEl = document.getElementById('pairingCode');
+      const simulatePairBtn = document.getElementById('simulatePairBtn'); // New button
       const loading = document.getElementById('loading');
       const status = document.getElementById('status');
       const sessionIdDisplay = document.getElementById('sessionIdDisplay');
@@ -224,7 +247,7 @@
           ws = new WebSocket(wsUrl);
         } catch (e) {
           console.error('WebSocket creation failed', e);
-          setStatus('Unable to create WebSocket', true);
+          setStatus('Impossible de créer le WebSocket', true);
           scheduleReconnect();
           return;
         }
@@ -232,7 +255,7 @@
         ws.addEventListener('open', () => {
           console.log('WebSocket open', wsUrl);
           reconnectAttempts = 0;
-          setStatus('Connected to server');
+          setStatus('Connecté au serveur');
           hideLoading();
         });
 
@@ -242,13 +265,13 @@
 
         ws.addEventListener('close', (ev) => {
           console.warn('WebSocket closed', ev);
-          setStatus('Disconnected from server', true);
+          setStatus('Déconnecté du serveur', true);
           scheduleReconnect();
         });
 
         ws.addEventListener('error', (err) => {
           console.error('WebSocket error', err);
-          setStatus('Server connection error', true);
+          setStatus('Erreur de connexion serveur', true);
         });
       }
 
@@ -267,7 +290,7 @@
         try {
           if (!ws || ws.readyState !== WebSocket.OPEN) {
             console.warn('WS not open, cannot send', obj);
-            setStatus('Not connected to server', true);
+            setStatus('Non connecté au serveur', true);
             return false;
           }
           ws.send(JSON.stringify(obj));
@@ -284,7 +307,7 @@
         status.style.color = isError ? 'var(--danger)' : 'var(--gray)';
       }
 
-      function showLoading(msg = 'Loading...') {
+      function showLoading(msg = 'Chargement...') {
         loading.style.display = 'flex';
         setStatus(msg);
       }
@@ -332,25 +355,26 @@
             handleSessionValidation(message);
             break;
           case 'connected':
-            setStatus('Successfully connected!');
+            setStatus('Connexion réussie !');
             // optionally show session
             if (message.session) {
               sessionIdText.textContent = message.session;
               sessionIdDisplay.classList.add('active');
             }
-            // hide pairing/qr as now connected
-            qrcode.classList.remove('show');
-            pairingCodeEl.classList.remove('show');
+            // hide pairing/qr/inputs as now connected
+            resetDisplay();
+            connectionButtons.style.display = 'none';
+            resetButton.style.display = 'flex';
             break;
           case 'disconnected':
-            setStatus('Disconnected: ' + (message.reason || ''), true);
+            setStatus('Déconnecté: ' + (message.reason || ''), true);
             break;
           case 'error':
             hideLoading();
-            setStatus(message.message || 'Server error', true);
+            setStatus(message.message || 'Erreur serveur', true);
             break;
           default:
-            console.warn('Unknown message type', message.type);
+                        console.warn('Unknown message type', message.type);
         }
       }
 
@@ -359,10 +383,13 @@
         pairingCodeEl.classList.remove('show');
         pairingCodeEl.textContent = '';
         pairingCodeEl.style.display = 'none';
+        simulatePairBtn.style.display = 'none'; // Hide simulate button
+        pairingCompleteInput.classList.remove('active'); // Hide manual input
+        
         qrcode.src = dataUrl;
         qrcode.classList.add('show');
         qrcode.style.display = 'block';
-        setStatus('📲 Scan this QR Code with WhatsApp');
+        setStatus('📲 Scannez ce QR Code avec WhatsApp');
       }
 
       // show pairing code
@@ -370,34 +397,16 @@
         qrcode.classList.remove('show');
         qrcode.src = '';
         qrcode.style.display = 'none';
+        
         pairingCodeEl.textContent = formatPairing(code);
         pairingCodeEl.setAttribute('data-raw', code); // raw code for copy or usage
         pairingCodeEl.classList.add('show');
         pairingCodeEl.style.display = 'block';
-        setStatus('🔑 Code pairing (interne) — pour tests / relai mobile');
-        // Add a small "simulate complete pairing" action for quick testing
-        addSimulateButton();
-      }
-
-      // Add a small simulate button under pairing code (only one)
-      function addSimulateButton() {
-        // remove existing if any
-        const existing = document.getElementById('simulatePairBtn');
-        if (existing) return;
-        const btn = document.createElement('button');
-        btn.id = 'simulatePairBtn';
-        btn.className = 'btn';
-        btn.style.marginTop = '10px';
-        btn.style.minWidth = 'auto';
-        btn.innerHTML = '<i class="fas fa-check-circle"></i> Simulate complete pairing';
-        btn.addEventListener('click', () => {
-          const raw = pairingCodeEl.getAttribute('data-raw');
-          if (!raw) { setStatus('No pairing code available', true); return; }
-          // send complete_pairing via WS (server supports that for internal testing)
-          const ok = sendIfOpen({ type: 'complete_pairing', pairingCode: String(raw) });
-          if (ok) setStatus('Envoi du pairing au serveur...');
-        });
-        pairingCodeEl.parentNode.insertBefore(btn, pairingCodeEl.nextSibling);
+        
+        simulatePairBtn.style.display = 'block';
+        pairingCompleteInput.classList.remove('active'); // Hide manual input
+        
+        setStatus('🔑 Code de jumelage INTERNE. Entrez ceci sur un autre client si nécessaire.');
       }
 
       // handle session_validation
@@ -407,13 +416,13 @@
         if (msg.valid) {
           sessionIdInput.classList.add('input-valid');
           sessionIdInput.classList.remove('input-invalid');
-          validationMessage.textContent = 'Session valid';
+          validationMessage.textContent = 'Session valide (Fichier trouvé)';
           validationMessage.className = 'validation-message validation-success';
           isSessionValid = true;
         } else {
           sessionIdInput.classList.add('input-invalid');
           sessionIdInput.classList.remove('input-valid');
-          validationMessage.textContent = msg.reason || 'Invalid session';
+          validationMessage.textContent = msg.reason || 'Session non trouvée';
           validationMessage.className = 'validation-message validation-error';
           isSessionValid = false;
         }
@@ -422,13 +431,14 @@
       }
 
       // ======= UI event wiring =======
+      
+      // Toggle Custom Session Input
       useCustomSession.addEventListener('change', function() {
         if (this.checked) {
           customSessionInput.classList.add('active');
-          // require user to type session id to validate
           if (!sessionIdInput.value.trim()) {
             sessionIdInput.classList.add('input-invalid');
-            validationMessage.textContent = 'Session ID is required';
+            validationMessage.textContent = 'ID de session requis';
             validationMessage.className = 'validation-message validation-error';
             isSessionValid = false;
             qrBtn.disabled = true;
@@ -445,6 +455,7 @@
         }
       });
 
+      // Debounce Session ID validation
       sessionIdInput.addEventListener('input', function() {
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(() => {
@@ -452,33 +463,38 @@
         }, 450);
       });
 
+      // QR Button: Starts QR flow
       qrBtn.addEventListener('click', () => startConnection('qrcode'));
+      
+      // Pairing Button: Shows request input
       pairingBtn.addEventListener('click', () => startConnection('pairing'));
+      
+      // Reset Button
       resetBtn.addEventListener('click', resetAll);
 
+      // Copy Session ID Button
       copySessionBtn.addEventListener('click', () => {
         const s = sessionIdText.textContent || '';
         if (!s) return;
-        navigator.clipboard.writeText(s).then(() => {
-          copySessionBtn.classList.add('copied');
-          copySessionBtn.innerHTML = '<i class="fas fa-check"></i>';
-          setTimeout(() => {
-            copySessionBtn.classList.remove('copied');
-            copySessionBtn.innerHTML = '<i class="far fa-copy"></i>';
-          }, 1800);
-        }).catch(() => setStatus('Unable to copy', true));
+        document.execCommand('copy'); // Using legacy command for broader iFrame compatibility
+        copySessionBtn.classList.add('copied');
+        copySessionBtn.innerHTML = '<i class="fas fa-check"></i>';
+        setTimeout(() => {
+          copySessionBtn.classList.remove('copied');
+          copySessionBtn.innerHTML = '<i class="far fa-copy"></i>';
+        }, 1800);
       });
 
-      // Validate phone button
-      validatePhone.addEventListener('click', () => {
+      // Request Pairing Code (sends phone number to server)
+      requestPairingCode.addEventListener('click', () => {
         const phone = (phoneNumber.value || '').trim();
         if (!/^\d{8,15}$/.test(phone)) {
-          setStatus('❌ Numéro invalide — entre 8 à 15 chiffres', true);
+          setStatus('❌ Numéro invalide (8-15 chiffres sans préfixe)', true);
           phoneNumber.classList.add('input-invalid');
           return;
         }
         phoneNumber.classList.remove('input-invalid');
-        showLoading('Generating Pairing Code...');
+        showLoading('Génération du Code de Jumelage...');
         const ok = sendIfOpen({
           type: 'request',
           content: 'pairing',
@@ -486,10 +502,32 @@
         });
         if (!ok) hideLoading();
         else {
-          // show pairing UI, hide buttons
-          connectionButtons.style.display = 'none';
-          resetButton.style.display = 'flex';
+          // Hide request input, show code/simulate area
+          pairingRequestInput.classList.remove('active');
         }
+      });
+      
+      // Complete Pairing Button (manual code input)
+      completePairingBtn.addEventListener('click', () => {
+        const rawCode = (manualPairingCode.value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (rawCode.length !== 8) {
+             setStatus('❌ Le code doit être composé de 8 caractères alphanumériques.', true);
+             manualPairingCode.classList.add('input-invalid');
+             return;
+        }
+        manualPairingCode.classList.remove('input-invalid');
+        showLoading('Envoi du code de jumelage au serveur...');
+        const ok = sendIfOpen({ type: 'complete_pairing', pairingCode: String(rawCode) });
+        if (!ok) hideLoading();
+      });
+      
+      // Simulate Complete Pairing Button (uses the internal generated code)
+      simulatePairBtn.addEventListener('click', () => {
+        const raw = pairingCodeEl.getAttribute('data-raw');
+        if (!raw) { setStatus('Aucun code de jumelage interne disponible', true); return; }
+        showLoading('Simulation de connexion en cours...');
+        const ok = sendIfOpen({ type: 'complete_pairing', pairingCode: String(raw) });
+        if (!ok) hideLoading();
       });
 
       // Validate session id (client -> server)
@@ -508,16 +546,13 @@
         }
 
         if (!sessionId || !sessionId.trim()) {
-          sessionIdInput.classList.add('input-invalid');
-          validationMessage.textContent = 'Session ID is required';
-          validationMessage.className = 'validation-message validation-error';
-          isSessionValid = false;
+          // ... error state
           return;
         }
 
         sessionIdInput.classList.remove('input-valid', 'input-invalid');
         validationSpinner.style.display = 'inline-block';
-        validationMessage.textContent = 'Validating...';
+        validationMessage.textContent = 'Validation...';
         validationMessage.className = 'validation-message';
 
         // send validate_session to server
@@ -528,9 +563,9 @@
       function startConnection(type) {
         // If custom session selected, require validation
         if (useCustomSession.checked && (!isSessionValid || !sessionIdInput.value.trim())) {
-          setStatus('Please enter a valid session', true);
+          setStatus('Veuillez entrer une session valide', true);
           sessionIdInput.classList.add('input-invalid');
-          validationMessage.textContent = 'Invalid session';
+          validationMessage.textContent = 'Session invalide';
           validationMessage.className = 'validation-message validation-error';
           sessionIdInput.focus();
           return;
@@ -543,18 +578,18 @@
         resetButton.style.display = 'flex';
 
         if (type === 'qrcode') {
-          customSessionInput.classList.remove('active');
-          phoneInput.classList.remove('active');
-          showLoading('Generating QR Code...');
+          pairingRequestInput.classList.remove('active');
+          pairingCompleteInput.classList.remove('active');
+          showLoading('Génération du QR Code...');
           sendIfOpen({
             type: 'request',
             content: 'qrcode',
             data: { customSession: useCustomSession.checked ? sessionIdInput.value.trim() : null }
           });
         } else if (type === 'pairing') {
-          customSessionInput.classList.remove('active');
-          phoneInput.classList.add('active');
-          setStatus('Enter your phone number to generate pairing code');
+          pairingRequestInput.classList.add('active');
+          pairingCompleteInput.classList.add('active');
+          setStatus('Choisissez : Générer un code (téléphone du bot) ou Entrer un code (reçu sur l’interface)');
         }
       }
 
@@ -568,11 +603,12 @@
         pairingCodeEl.textContent = '';
         pairingCodeEl.style.display = 'none';
 
-        // remove simulate button if any
-        const sim = document.getElementById('simulatePairBtn');
-        if (sim) sim.remove();
+        simulatePairBtn.style.display = 'none';
 
         sessionIdDisplay.classList.remove('active');
+        
+        pairingRequestInput.classList.remove('active');
+        pairingCompleteInput.classList.remove('active');
       }
 
       // Reset all (UI + send cancel to server)
@@ -583,9 +619,10 @@
         sessionIdInput.value = '';
         sessionIdInput.classList.remove('input-valid', 'input-invalid');
         phoneNumber.value = '';
+        manualPairingCode.value = '';
         connectionButtons.style.display = 'flex';
         resetButton.style.display = 'none';
-        setStatus('Select a login method');
+        setStatus('Sélectionnez une méthode de connexion');
         currentConnectionType = null;
 
         validationSpinner.style.display = 'none';
@@ -598,17 +635,8 @@
         sendIfOpen({ type: 'cancel' });
       }
 
-      // expose a simple copy to clipboard on pairing code click
-      pairingCodeEl.addEventListener('click', () => {
-        const raw = pairingCodeEl.getAttribute('data-raw');
-        if (!raw) return;
-        navigator.clipboard.writeText(raw).then(() => {
-          setStatus('Pairing code copied to clipboard');
-        }).catch(()=> setStatus('Unable to copy pairing code', true));
-      });
-
       // initial status
-      setStatus('Select a login method');
+      setStatus('Sélectionnez une méthode de connexion');
     });
   </script>
 </body>
