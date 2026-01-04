@@ -6,120 +6,181 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Prompt pour humaniser les textes et gérer les stats
-const SYSTEM_INSTRUCTIONS = `
-Tu es un Maître de Jeu (MJ) de Dark Fantasy. 
-CONSIGNES DE STYLE :
-- Pas de mots compliqués comme "obscurcir", "ineffable", "mystérieux" à outrance.
-- Parle comme un humain : sois direct, viscéral, parfois brutal.
-- Décris les bruits, l'odeur, la douleur physique.
-- Ne fais pas de morale.
-`;
+// Helper pour formater le contexte (inclut désormais les stats actuelles de l'incursion)
+const formatPlayerContext = (player, currentStats = null) => {
+  const stats = currentStats || player.baseStats || {};
+  const race = Array.isArray(player.races) ? player.races.join("/") : "Inconnu";
+  const skills = Array.isArray(player.uniqueSkills) ? player.uniqueSkills.map(s => s.name).join(", ") : "Aucune";
 
+  return `
+    NOM: ${player.avatarName} | CLASSE: ${player.characterClass} | RANG: ${player.rank}
+    STATS ACTUELLES: HP:${Math.ceil(stats.hp)}/${stats.hpMax || stats.hp}, MP:${Math.ceil(stats.mp)}/${stats.mpMax || stats.mp}, END:${Math.ceil(stats.end)}/${stats.endMax || stats.end}
+    COMPÉTENCES: ${skills}
+    ATTRIBUTS: ${player.attributes?.join(", ") || "Aucun"}
+  `;
+};
+
+/**
+ * Endpoint /quest/scenario
+ * Initialise la quête et les stats de combat
+ */
 app.post("/quest/scenario", async (req, res) => {
   const { player, quest, mode } = req.body;
-  const stats = player.baseStats || {};
-  const mods = player.modifiers || {};
+
+  const systemPrompt = `
+    Tu es un Maître du Jeu (MJ) de Dark Fantasy. Ton ton est immersif, sombre mais DIRECT. 
+    Évite les mots trop complexes ou pompeux ("mysticisme", "émanations", "indicible"). 
+    Parle d'actions concrètes. Réponds UNIQUEMENT en JSON.
+  `;
 
   const userPrompt = `
-    DÉTAILS JOUEUR: ${player.avatarName}, ${player.characterClass} de rang ${player.rank}.
-    ZONE: ${quest.zoneName}. MISSION: ${quest.title}.
-    
-    Initialise l'aventure. 
-    RETOURNE CE JSON UNIQUEMENT :
+    CONTEXTE: ${formatPlayerContext(player)}
+    ZONE: ${quest.zoneName}
+    MISSION: ${quest.task || quest.title}
+    MODE: ${mode}
+
+    Génère l'ouverture de l'incursion.
+    Structure JSON attendue :
     {
-      "title": "Nom de la quête",
-      "intro": "Accroche directe et courte",
-      "phases": 4,
-      "currentPhase": 1,
-      "currentStats": {
-        "hp": ${(stats.hp || 100) + (mods.hp || 0)},
-        "maxHp": ${(stats.hp || 100) + (mods.hp || 0)},
-        "mp": ${(stats.mp_ps || 50) + (mods.mp_ps || 0)},
-        "maxMp": ${(stats.mp_ps || 50) + (mods.mp_ps || 0)},
-        "stamina": ${(stats.endurance || 100) + (mods.endurance || 0)},
-        "maxStamina": ${(stats.endurance || 100) + (mods.endurance || 0)}
-      },
-      "hazard": "Menace immédiate",
-      "companion": ${mode === 'team' ? '{"name": "Kael", "role": "Voleur de sang"}' : 'null'}
+      "title": "Titre court et percutant",
+      "intro": "2 phrases d'ambiance directes sur ce que le joueur voit en arrivant.",
+      "hidden_plot": "Le secret du lieu (ex: un traître parmi les gardes, un rituel caché)",
+      "hazard": "La menace immédiate (ex: une meute de loups, un piège à pression)",
+      "companion": ${mode === 'team' ? '{"name": "Kael", "role": "Guerrier de fer"}' : 'null'}
     }
   `;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: SYSTEM_INSTRUCTIONS }, { role: "user", content: userPrompt }],
+        temperature: 0.8,
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
         response_format: { type: "json_object" }
       })
     });
+
     const data = await response.json();
     res.json(JSON.parse(data.choices[0].message.content));
-  } catch (e) { res.status(500).json({ error: "L'Oracle est HS." }); }
+  } catch (error) {
+    res.status(500).json({ error: "L'Oracle est silencieux." });
+  }
 });
 
+/**
+ * Endpoint /quest/progress
+ * Gère les actions, les dégâts et la progression de la barre
+ */
 app.post("/quest/progress", async (req, res) => {
   const { player, quest, action } = req.body;
-  
+
+  const systemPrompt = `
+    Tu es un MJ de JDR. Le joueur te donne une action. 
+    Tu dois décrire le résultat de manière humaine, courte et brutale.
+    IMPORTANT : Tu dois mettre à jour les statistiques (HP, MP, END) et la progression (0 à 100).
+    - Si le joueur attaque physiquement, il perd de l'Endurance (END).
+    - Si le joueur utilise la magie, il perd du Mana (MP).
+    - Si le danger (hazard) frappe, il perd des PV (HP).
+    - Chaque action réussie augmente "newProgress" de 10 à 25 points.
+    Réponds UNIQUEMENT en JSON.
+  `;
+
   const userPrompt = `
-    QUÊTE : ${quest.title} (Phase ${quest.currentPhase}/${quest.phases})
-    STATS ACTUELLES : HP:${quest.currentStats.hp}, MP:${quest.currentStats.mp}, END:${quest.currentStats.stamina}
-    ACTION DU JOUEUR : "${action}"
-    
-    Analyse l'action. Si c'est risqué, baisse les HP. Si c'est magique, baisse les MP. Si c'est physique, baisse l'Endurance.
-    Si l'action est bonne, fais progresser la phase (+1).
-    
-    RETOURNE CE JSON UNIQUEMENT :
+    ÉTAT ACTUEL: ${formatPlayerContext(player, quest.stats)}
+    PROGRESSION ACTUELLE: ${quest.progress}%
+    INTRIGUE: ${quest.hidden_plot}
+    DANGER: ${quest.hazard}
+    ACTION DU JOUEUR: "${action}"
+
+    Structure JSON :
     {
-      "narration": "Texte court, simple et humain de ce qu'il se passe",
-      "statsUpdate": { "hp": -10, "mp": 0, "stamina": -5 },
-      "phaseChange": 1
+      "aiResponse": "Description de l'action (3 phrases max). Sois direct.",
+      "newStats": {
+        "hp": nombre,
+        "mp": nombre,
+        "end": nombre,
+        "hpMax": ${quest.stats.hpMax},
+        "mpMax": ${quest.stats.mpMax},
+        "endMax": ${quest.stats.endMax},
+        "pa": ${quest.stats.pa},
+        "mai": ${quest.stats.mai},
+        "vit": ${quest.stats.vit}
+      },
+      "newProgress": nombre (0-100),
+      "newHazard": "Quelle est la nouvelle menace après cette action ?"
     }
   `;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: SYSTEM_INSTRUCTIONS }, { role: "user", content: userPrompt }],
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
         response_format: { type: "json_object" }
       })
     });
+
     const data = await response.json();
     res.json(JSON.parse(data.choices[0].message.content));
-  } catch (e) { res.status(500).json({ error: "Échec narration." }); }
+  } catch (error) {
+    res.status(500).json({ aiResponse: "L'Oracle ne voit rien.", newProgress: quest.progress });
+  }
 });
 
+/**
+ * Endpoint /quest/resolve
+ * Conclusion basée sur les stats restantes et le succès des actions
+ */
 app.post("/quest/resolve", async (req, res) => {
   const { player, quest } = req.body;
-  const isDead = quest.currentStats.hp <= 0;
 
   const userPrompt = `
-    Résultat final. HP: ${quest.currentStats.hp}.
-    Si HP <= 0, c'est un échec cuisant (mort ou fuite).
-    Sinon, c'est un succès.
+    Évalue la fin de l'incursion "${quest.title}".
+    Stats finales: HP:${quest.stats.hp}/${quest.stats.hpMax}
+    Journal: ${JSON.stringify(quest.journal.slice(-3))}
+    Progression: ${quest.progress}%
+
+    Si HP <= 0, c'est un échec total (success: false).
+    Si progression >= 80%, c'est un succès.
     
-    JSON : { "success": ${!isDead}, "reason": "Texte de fin direct", "rewards": { "gold": 50, "exp": 30 } }
+    Réponds en JSON:
+    {
+      "success": boolean,
+      "reason": "Une conclusion épique et courte (2 phrases).",
+      "rewards": { "gold": ${quest.reward_gold || 0}, "exp": 25 }
+    }
   `;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: SYSTEM_INSTRUCTIONS }, { role: "user", content: userPrompt }],
+        messages: [{ role: "system", content: "Tu es le Juge du Destin. Sois bref." }, { role: "user", content: userPrompt }],
         response_format: { type: "json_object" }
       })
     });
+
     const data = await response.json();
     res.json(JSON.parse(data.choices[0].message.content));
-  } catch (e) { res.status(500).json({ success: false, reason: "Le destin a tranché." }); }
+  } catch (error) {
+    res.status(500).json({ success: false, reason: "Le fil se brise." });
+  }
 });
 
-const PORT = 3000;
-app.listen(PORT);
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Oracle V2.5 actif sur port ${PORT}`));
