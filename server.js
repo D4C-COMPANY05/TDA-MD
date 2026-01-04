@@ -1,118 +1,186 @@
 import express from "express";
-import OpenAI from "openai";
+import fetch from "node-fetch";
+import crypto from "crypto";
 import cors from "cors";
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Initialisation OpenAI
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY, 
+/**
+ * Endpoint POST /quest/scenario
+ * Génère l'introduction et initialise le contexte caché de la quête
+ */
+app.post("/quest/scenario", async (req, res) => {
+  const { player, quest, mode } = req.body;
+
+  if (!player || !quest) {
+    return res.status(400).json({ error: "Données manquantes." });
+  }
+
+  const systemPrompt = `
+    Tu es l'Oracle Céleste, un MJ de RPG sombre et épique.
+    Ton rôle est de créer l'introduction d'une quête interactive.
+    IMPORTANT : Tu dois définir secrètement un "scénario caché" (ce que le joueur ne sait pas encore).
+    Réponds UNIQUEMENT par un objet JSON.
+  `;
+
+  const userPrompt = `
+    ZONE : ${quest.zoneName}
+    RANG : ${quest.rank}
+    MISSION : ${quest.task}
+    JOUEUR : ${player.name} (${player.race}), Stats: ${JSON.stringify(player.stats)}
+    MODE : ${mode}
+
+    Génère un titre, une intro narrative, et définit les éléments cachés du scénario.
+    Structure JSON :
+    {
+      "title": "string",
+      "intro": "L'amorce de l'histoire racontée au joueur",
+      "hidden_plot": "Ce qui se passe réellement en coulisse (ex: une trahison, un monstre tapi dans l'ombre)",
+      "hazard": "Le danger immédiat ou la menace principale",
+      "reward_gold": ${quest.reward_gold || 0}
+    }
+  `;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.8,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        response_format: { type: "json_object" }
+      })
+    });
+
+    const data = await response.json();
+    res.json(JSON.parse(data.choices[0].message.content));
+  } catch (error) {
+    res.status(500).json({ error: "Erreur Oracle Scenario" });
+  }
 });
 
 /**
- * Nettoyage des données du joueur pour le Prompt
+ * Endpoint POST /quest/progress
+ * L'IA réagit à l'action du joueur, joue les ennemis et fait avancer l'intrigue.
  */
-const getStatsContext = (player) => {
-    const s = player.stats || {};
-    return `
-    IDENTITÉ : ${player.name || 'Inconnu'}
-    PROFIL : ${player.races || 'Humain'} ${player.characterClass || 'Aventurier'} (Rang ${player.rank || 'F'})
-    ÉCHELLE : PV:${s.PV || 100}, PM:${s.PM || 50}, End:${s.Endurance || 100}
-    ATTRIBUTS : Force:${s.PF || 10}, Agi:${s.PA || 10}, Maîtrise:${s.Maîtrise || 5}, Chance:${s.Chance || 0}
-    COMPÉTENCES : ${JSON.stringify(player.skills || [])}
-    `;
-};
-
-// --- ROUTE 1 : SCÉNARIO (L'étape qui posait problème) ---
-app.post("/quest/scenario", async (req, res) => {
-    const { player, quest, mode } = req.body;
-
-    // Log pour debug dans Render
-    console.log(`Génération scénario pour ${player.name} - Quête: ${quest.title}`);
-
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o", 
-            messages: [
-                { 
-                    role: "system", 
-                    content: "Tu es l'Oracle. Tu génères du JSON pur. Ne parle pas, ne commente pas, renvoie juste l'objet." 
-                },
-                { 
-                    role: "user", 
-                    content: `Génère l'intro de quête.
-                    QUÊTE: ${quest.title} (${quest.zoneName})
-                    JOUEUR: ${getStatsContext(player)}
-                    MODE: ${mode}
-
-                    FORMAT JSON STRICT :
-                    {
-                        "title": "Titre épique",
-                        "intro": "Texte narratif (2-3 phrases)",
-                        "hidden_plot": "Secret de quête",
-                        "companion": ${mode === 'team' ? '{"name": "Nom", "role": "Classe"}' : 'null'},
-                        "hazard": "Menace principale",
-                        "reward_gold": ${quest.rewards?.manacoins || 0}
-                    }`
-                }
-            ],
-            response_format: { type: "json_object" },
-            temperature: 0.7
-        });
-
-        const content = completion.choices[0].message.content;
-        console.log("Réponse OpenAI reçue.");
-        res.json(JSON.parse(content));
-
-    } catch (error) {
-        console.error("ERREUR SCENARIO:", error.message);
-        res.status(500).json({ error: "Erreur Oracle", details: error.message });
-    }
-});
-
-// --- ROUTE 2 : PROGRESSION ---
 app.post("/quest/progress", async (req, res) => {
-    const { player, quest, action } = req.body;
+  const { player, quest, action } = req.body;
 
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                { role: "system", content: "Tu es le MJ. Décris les conséquences de l'action de façon immersive et courte." },
-                { role: "user", content: `CONTEXTE: ${quest.title}. JOUEUR: ${getStatsContext(player)}. ACTION: ${action}.` }
-            ],
-            max_tokens: 150
-        });
+  const systemPrompt = `
+    Tu es l'Oracle Céleste (MJ). Le joueur vient d'effectuer une action. 
+    Tu dois décrire les conséquences, faire avancer l'intrigue et jouer les ennemis/PNJ.
+    
+    RÈGLES STRICTES :
+    1. LOGIQUE : Si l'action est risquée, utilise les stats du joueur pour décider du résultat.
+    2. BROUILLARD DE GUERRE : Ne révèle jamais le "hidden_plot" directement. Donne des indices narratifs.
+    3. ANTAGONISME : Si des ennemis sont présents, décris leurs attaques ou leurs mouvements de manière menaçante.
+    4. SANS ABUS : Si le joueur fait une action logique et forte, laisse-le réussir, mais maintiens la tension.
+    5. CHAMP DE VISION : Décris uniquement ce que le personnage peut voir/entendre.
+  `;
 
-        res.json({ aiResponse: completion.choices[0].message.content });
-    } catch (error) {
-        console.error("ERREUR PROGRESS:", error);
-        res.status(500).json({ aiResponse: "L'Oracle est troublé." });
-    }
+  const userPrompt = `
+    CONTEXTE INITIAL : ${quest.intro}
+    COMPLOT CACHÉ : ${quest.hidden_plot}
+    DANGER : ${quest.hazard}
+    HISTORIQUE : ${JSON.stringify(quest.journal || [])}
+    
+    ACTION DU JOUEUR : "${action}"
+    
+    STATS DU JOUEUR : ${JSON.stringify(player.stats)}
+
+    Réponds par un texte narratif court (3-5 phrases) qui décrit ce qui arrive ensuite.
+  `;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.7,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ]
+      })
+    });
+
+    const data = await response.json();
+    res.json({ aiResponse: data.choices[0].message.content });
+  } catch (error) {
+    res.status(500).json({ aiResponse: "L'Oracle reste muet devant votre action..." });
+  }
 });
 
-// --- ROUTE 3 : RESOLUTION ---
+/**
+ * Endpoint POST /quest/resolve
+ * Analyse finale basée sur l'ensemble de l'échange narratif
+ */
 app.post("/quest/resolve", async (req, res) => {
-    const { player, quest } = req.body;
+  const { player, quest } = req.body;
 
-    try {
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o",
-            messages: [
-                { role: "system", content: "Juge final. Réponds en JSON." },
-                { role: "user", content: `Analyse le succès. Journal: ${JSON.stringify(quest.journal)}. Stats: ${getStatsContext(player)}.
-                JSON: {"success": boolean, "reason": "Texte", "rewards": {"gold": ${quest.reward_gold}, "exp": 25}}` }
-            ],
-            response_format: { type: "json_object" }
-        });
+  const systemPrompt = `
+    Tu es l'Oracle Céleste. Juge final.
+    Analyse si le joueur a triomphé ou péri en fonction de l'historique complet de la quête.
+    Répond UNIQUEMENT en JSON.
+  `;
 
-        res.json(JSON.parse(completion.choices[0].message.content));
-    } catch (error) {
-        res.status(500).json({ success: false, reason: "Destin brisé." });
+  const userPrompt = `
+    OBJECTIF : ${quest.title}
+    COMPLOT CACHÉ ÉTAIT : ${quest.hidden_plot}
+    
+    HISTORIQUE DES ÉCHANGES :
+    ${JSON.stringify(quest.journal)}
+
+    STRUCTURE JSON :
+    {
+      "success": boolean,
+      "reason": "Résumé narratif de la conclusion (victoire ou mort/fuite).",
+      "rewards": { "gold": number, "exp": 25 }
     }
+  `;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.5,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: { type: "json_object" }
+      })
+    });
+
+    const data = await response.json();
+    const result = JSON.parse(data.choices[0].message.content);
+    
+    result.rewards = result.success ? { gold: quest.reward_gold || 0, exp: 25 } : { gold: 0, exp: 5 };
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ success: false, reason: "Le destin est incertain.", rewards: { gold: 0, exp: 5 } });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Oracle OpenAI Ready sur port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`L'Oracle est éveillé sur le port ${PORT}`);
+});
