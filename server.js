@@ -6,36 +6,31 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Initialisation de l'API OpenAI
-// Note : La clé API doit être définie dans les variables d'environnement de Render sous le nom OPENAI_API_KEY
+// Initialisation OpenAI
 const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY, 
 });
 
 /**
- * Formate le contexte du joueur pour les prompts
- * Utilisation des clés exactes : races, characterClass, stats
+ * Nettoyage des données du joueur pour le Prompt
  */
 const getStatsContext = (player) => {
     const s = player.stats || {};
     return `
-    NOM : ${player.name || 'Anonyme'}
-    RACE : ${player.races || 'Humain'}
-    CLASSE : ${player.characterClass || 'Aventurier'}
-    RANG : ${player.rank || 'F'}
-    
-    STATISTIQUES ACTUELLES :
-    PV: ${s.PV || 100}, PM: ${s.PM || 50}, Endurance: ${s.Endurance || 100}
-    Force(PF): ${s.PF || 10}, Agilité(PA): ${s.PA || 10}, Maîtrise: ${s.Maîtrise || 5}
-    Chance: ${s.Chance || 0}, Vitesse: ${s.Vitesse || 5}
-    
+    IDENTITÉ : ${player.name || 'Inconnu'}
+    PROFIL : ${player.races || 'Humain'} ${player.characterClass || 'Aventurier'} (Rang ${player.rank || 'F'})
+    ÉCHELLE : PV:${s.PV || 100}, PM:${s.PM || 50}, End:${s.Endurance || 100}
+    ATTRIBUTS : Force:${s.PF || 10}, Agi:${s.PA || 10}, Maîtrise:${s.Maîtrise || 5}, Chance:${s.Chance || 0}
     COMPÉTENCES : ${JSON.stringify(player.skills || [])}
     `;
 };
 
-// --- ROUTE 1 : GÉNÉRATION DU SCÉNARIO D'ENTRÉE ---
+// --- ROUTE 1 : SCÉNARIO (L'étape qui posait problème) ---
 app.post("/quest/scenario", async (req, res) => {
     const { player, quest, mode } = req.body;
+
+    // Log pour debug dans Render
+    console.log(`Génération scénario pour ${player.name} - Quête: ${quest.title}`);
 
     try {
         const completion = await openai.chat.completions.create({
@@ -43,38 +38,41 @@ app.post("/quest/scenario", async (req, res) => {
             messages: [
                 { 
                     role: "system", 
-                    content: "Tu es l'Oracle Céleste. Tu crées des introductions de quêtes épiques et mystérieuses. Réponds exclusivement en JSON." 
+                    content: "Tu es l'Oracle. Tu génères du JSON pur. Ne parle pas, ne commente pas, renvoie juste l'objet." 
                 },
                 { 
                     role: "user", 
-                    content: `Génère un scénario pour : ${quest.title}. 
-                    Lieu : ${quest.zoneName}. 
-                    Mode : ${mode}. 
-                    Joueur : ${getStatsContext(player)}.
-                    
-                    Format JSON requis :
+                    content: `Génère l'intro de quête.
+                    QUÊTE: ${quest.title} (${quest.zoneName})
+                    JOUEUR: ${getStatsContext(player)}
+                    MODE: ${mode}
+
+                    FORMAT JSON STRICT :
                     {
-                        "title": "Titre stylisé",
-                        "intro": "Texte narratif immersif",
-                        "hidden_plot": "Le secret de cette quête",
-                        "companion": {"name": "Nom", "role": "Classe/Utilité"},
-                        "hazard": "La menace principale",
+                        "title": "Titre épique",
+                        "intro": "Texte narratif (2-3 phrases)",
+                        "hidden_plot": "Secret de quête",
+                        "companion": ${mode === 'team' ? '{"name": "Nom", "role": "Classe"}' : 'null'},
+                        "hazard": "Menace principale",
                         "reward_gold": ${quest.rewards?.manacoins || 0}
                     }`
                 }
             ],
-            response_format: { type: "json_object" }
+            response_format: { type: "json_object" },
+            temperature: 0.7
         });
 
-        const scenarioData = JSON.parse(completion.choices[0].message.content);
-        res.json(scenarioData);
+        const content = completion.choices[0].message.content;
+        console.log("Réponse OpenAI reçue.");
+        res.json(JSON.parse(content));
+
     } catch (error) {
-        console.error("Erreur Scenario OpenAI:", error);
-        res.status(500).json({ error: "L'Oracle est incapable de lire le destin." });
+        console.error("ERREUR SCENARIO:", error.message);
+        res.status(500).json({ error: "Erreur Oracle", details: error.message });
     }
 });
 
-// --- ROUTE 2 : PROGRESSION DE L'ACTION ---
+// --- ROUTE 2 : PROGRESSION ---
 app.post("/quest/progress", async (req, res) => {
     const { player, quest, action } = req.body;
 
@@ -82,28 +80,20 @@ app.post("/quest/progress", async (req, res) => {
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
-                { 
-                    role: "system", 
-                    content: "Tu es le MJ de l'Oracle Céleste. Décris les conséquences de l'action du joueur de manière narrative et concise." 
-                },
-                { 
-                    role: "user", 
-                    content: `ACTION : "${action}"
-                    CONTEXTE JOUEUR : ${getStatsContext(player)}
-                    QUÊTE : ${quest.title}
-                    HISTORIQUE : ${JSON.stringify(quest.journal ? quest.journal.slice(-2) : [])}`
-                }
-            ]
+                { role: "system", content: "Tu es le MJ. Décris les conséquences de l'action de façon immersive et courte." },
+                { role: "user", content: `CONTEXTE: ${quest.title}. JOUEUR: ${getStatsContext(player)}. ACTION: ${action}.` }
+            ],
+            max_tokens: 150
         });
 
         res.json({ aiResponse: completion.choices[0].message.content });
     } catch (error) {
-        console.error("Erreur Progress OpenAI:", error);
-        res.status(500).json({ aiResponse: "Le flux temporel est perturbé." });
+        console.error("ERREUR PROGRESS:", error);
+        res.status(500).json({ aiResponse: "L'Oracle est troublé." });
     }
 });
 
-// --- ROUTE 3 : RÉSOLUTION FINALE ---
+// --- ROUTE 3 : RESOLUTION ---
 app.post("/quest/resolve", async (req, res) => {
     const { player, quest } = req.body;
 
@@ -111,35 +101,18 @@ app.post("/quest/resolve", async (req, res) => {
         const completion = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
-                { 
-                    role: "system", 
-                    content: "Tu es le Juge de l'Oracle. Évalue si la quête est un succès ou un échec. Réponds en JSON." 
-                },
-                { 
-                    role: "user", 
-                    content: `JOURNAL : ${JSON.stringify(quest.journal)}
-                    JOUEUR : ${getStatsContext(player)}
-                    
-                    Format JSON requis :
-                    {
-                        "success": true/false,
-                        "reason": "Résumé narratif du dénouement",
-                        "rewards": {"gold": ${quest.reward_gold || 0}, "exp": 25}
-                    }`
-                }
+                { role: "system", content: "Juge final. Réponds en JSON." },
+                { role: "user", content: `Analyse le succès. Journal: ${JSON.stringify(quest.journal)}. Stats: ${getStatsContext(player)}.
+                JSON: {"success": boolean, "reason": "Texte", "rewards": {"gold": ${quest.reward_gold}, "exp": 25}}` }
             ],
             response_format: { type: "json_object" }
         });
 
-        const resultData = JSON.parse(completion.choices[0].message.content);
-        res.json(resultData);
+        res.json(JSON.parse(completion.choices[0].message.content));
     } catch (error) {
-        console.error("Erreur Resolve OpenAI:", error);
-        res.status(500).json({ success: false, reason: "Destin brisé.", rewards: { gold: 0, exp: 5 } });
+        res.status(500).json({ success: false, reason: "Destin brisé." });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Serveur Oracle OpenAI en ligne sur le port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Oracle OpenAI Ready sur port ${PORT}`));
