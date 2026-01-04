@@ -8,15 +8,8 @@ app.use(express.json());
 app.use(cors());
 
 /**
- * Génère un ID unique
- */
-function generateId() {
-  return crypto.randomUUID();
-}
-
-/**
  * Endpoint POST /quest/scenario
- * Génère l'introduction et le danger de la quête
+ * Génère l'introduction et initialise le contexte caché de la quête
  */
 app.post("/quest/scenario", async (req, res) => {
   const { player, quest, mode } = req.body;
@@ -27,8 +20,9 @@ app.post("/quest/scenario", async (req, res) => {
 
   const systemPrompt = `
     Tu es l'Oracle Céleste, un MJ de RPG sombre et épique.
-    Ton rôle est de créer l'introduction d'une quête.
-    Répond UNIQUEMENT par un objet JSON.
+    Ton rôle est de créer l'introduction d'une quête interactive.
+    IMPORTANT : Tu dois définir secrètement un "scénario caché" (ce que le joueur ne sait pas encore).
+    Réponds UNIQUEMENT par un objet JSON.
   `;
 
   const userPrompt = `
@@ -38,13 +32,13 @@ app.post("/quest/scenario", async (req, res) => {
     JOUEUR : ${player.name} (${player.race}), Stats: ${JSON.stringify(player.stats)}
     MODE : ${mode}
 
-    Génère un titre, une intro et un "hazard" (danger spécifique).
+    Génère un titre, une intro narrative, et définit les éléments cachés du scénario.
     Structure JSON :
     {
       "title": "string",
-      "intro": "string",
-      "hazard": "string",
-      "duration": 180,
+      "intro": "L'amorce de l'histoire racontée au joueur",
+      "hidden_plot": "Ce qui se passe réellement en coulisse (ex: une trahison, un monstre tapi dans l'ombre)",
+      "hazard": "Le danger immédiat ou la menace principale",
       "reward_gold": ${quest.reward_gold || 0}
     }
   `;
@@ -58,7 +52,7 @@ app.post("/quest/scenario", async (req, res) => {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        temperature: 0.7,
+        temperature: 0.8,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }
@@ -75,43 +69,85 @@ app.post("/quest/scenario", async (req, res) => {
 });
 
 /**
+ * Endpoint POST /quest/progress
+ * L'IA réagit à l'action du joueur, joue les ennemis et fait avancer l'intrigue.
+ */
+app.post("/quest/progress", async (req, res) => {
+  const { player, quest, action } = req.body;
+
+  const systemPrompt = `
+    Tu es l'Oracle Céleste (MJ). Le joueur vient d'effectuer une action. 
+    Tu dois décrire les conséquences, faire avancer l'intrigue et jouer les ennemis/PNJ.
+    
+    RÈGLES STRICTES :
+    1. LOGIQUE : Si l'action est risquée, utilise les stats du joueur pour décider du résultat.
+    2. BROUILLARD DE GUERRE : Ne révèle jamais le "hidden_plot" directement. Donne des indices narratifs.
+    3. ANTAGONISME : Si des ennemis sont présents, décris leurs attaques ou leurs mouvements de manière menaçante.
+    4. SANS ABUS : Si le joueur fait une action logique et forte, laisse-le réussir, mais maintiens la tension.
+    5. CHAMP DE VISION : Décris uniquement ce que le personnage peut voir/entendre.
+  `;
+
+  const userPrompt = `
+    CONTEXTE INITIAL : ${quest.intro}
+    COMPLOT CACHÉ : ${quest.hidden_plot}
+    DANGER : ${quest.hazard}
+    HISTORIQUE : ${JSON.stringify(quest.journal || [])}
+    
+    ACTION DU JOUEUR : "${action}"
+    
+    STATS DU JOUEUR : ${JSON.stringify(player.stats)}
+
+    Réponds par un texte narratif court (3-5 phrases) qui décrit ce qui arrive ensuite.
+  `;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.7,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ]
+      })
+    });
+
+    const data = await response.json();
+    res.json({ aiResponse: data.choices[0].message.content });
+  } catch (error) {
+    res.status(500).json({ aiResponse: "L'Oracle reste muet devant votre action..." });
+  }
+});
+
+/**
  * Endpoint POST /quest/resolve
- * Analyse les actions du joueur et décide du succès ou de l'échec
+ * Analyse finale basée sur l'ensemble de l'échange narratif
  */
 app.post("/quest/resolve", async (req, res) => {
   const { player, quest } = req.body;
 
-  if (!player || !quest || !quest.journal) {
-    return res.status(400).json({ error: "Données de résolution manquantes." });
-  }
-
   const systemPrompt = `
-    Tu es l'Oracle Céleste. Tu dois juger si un joueur a réussi sa quête.
-    Analyse le journal d'actions par rapport au danger (hazard) et aux statistiques du joueur.
-    
-    CRITÈRES DE JUGEMENT :
-    1. COHÉRENCE : Les actions sont-elles logiques face au danger ?
-    2. RÉALISME : Un joueur de rang ${player.rank} avec ces stats peut-il réussir ce qu'il a décrit ?
-    3. EFFORT : Si le journal est trop court ou vide, c'est un ÉCHEC.
-    4. RÉCOMPENSE : Si succès, attribue l'or prévu (${quest.reward_gold}).
-
+    Tu es l'Oracle Céleste. Juge final.
+    Analyse si le joueur a triomphé ou péri en fonction de l'historique complet de la quête.
     Répond UNIQUEMENT en JSON.
   `;
 
   const userPrompt = `
-    DANGER À AFFRONTER : ${quest.hazard}
     OBJECTIF : ${quest.title}
+    COMPLOT CACHÉ ÉTAIT : ${quest.hidden_plot}
     
-    STATS DU JOUEUR : ${JSON.stringify(player.stats)}
-    RANG DU JOUEUR : ${player.rank}
+    HISTORIQUE DES ÉCHANGES :
+    ${JSON.stringify(quest.journal)}
 
-    JOURNAL DES ACTIONS DU JOUEUR :
-    ${quest.journal.map((a, i) => `Action ${i+1}: ${a}`).join("\n")}
-
-    STRUCTURE JSON ATTENDUE :
+    STRUCTURE JSON :
     {
       "success": boolean,
-      "reason": "Une explication narrative de 2-3 phrases sur pourquoi c'est un succès ou un échec.",
+      "reason": "Résumé narratif de la conclusion (victoire ou mort/fuite).",
       "rewards": { "gold": number, "exp": 25 }
     }
   `;
@@ -125,40 +161,26 @@ app.post("/quest/resolve", async (req, res) => {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        temperature: 0.5, // Plus bas pour plus de cohérence
+        temperature: 0.5,
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
+          { role: "user", content: userPrompt },
         ],
         response_format: { type: "json_object" }
       })
     });
 
-    if (!response.ok) throw new Error("Erreur API OpenAI");
-
     const data = await response.json();
     const result = JSON.parse(data.choices[0].message.content);
-
-    // Ajustement des récompenses si échec
-    if (!result.success) {
-      result.rewards = { gold: 0, exp: 5 };
-    } else {
-      result.rewards = { gold: quest.reward_gold || 0, exp: 25 };
-    }
-
+    
+    result.rewards = result.success ? { gold: quest.reward_gold || 0, exp: 25 } : { gold: 0, exp: 5 };
     res.json(result);
-
   } catch (error) {
-    console.error("Erreur Résolution :", error);
-    res.status(500).json({ 
-      success: false, 
-      reason: "L'Oracle a été interrompu dans sa vision. Par défaut, vous avez survécu de justesse.",
-      rewards: { gold: 0, exp: 5 }
-    });
+    res.status(500).json({ success: false, reason: "Le destin est incertain.", rewards: { gold: 0, exp: 5 } });
   }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`L'Oracle écoute sur le port ${PORT}`);
+  console.log(`L'Oracle est éveillé sur le port ${PORT}`);
 });
