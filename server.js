@@ -7,180 +7,148 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Configuration du modèle et limites
+const API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent";
+const apiKey = ""; // La clé est injectée par l'environnement
+
 /**
- * Endpoint POST /quest/scenario
- * Génère l'introduction et initialise le contexte caché de la quête
+ * Système de Retry avec Exponential Backoff
  */
+async function fetchWithRetry(url, options, retries = 5, backoff = 1000) {
+    try {
+        const res = await fetch(url, options);
+        if (!res.ok && retries > 0) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } catch (err) {
+        if (retries <= 0) throw err;
+        await new Promise(r => setTimeout(r, backoff));
+        return fetchWithRetry(url, options, retries - 1, backoff * 2);
+    }
+}
+
+/**
+ * Analyse les statistiques pour le MJ
+ */
+const getStatsContext = (player) => {
+    const s = player.stats || {};
+    return `
+    RESTATS VITALES (Modifiables) : PV: ${s.PV}, PM: ${s.PM}, Endurance: ${s.Endurance}
+    STAT FIXE : Chance: ${s.Chance} (Efficacité liée aux PV restants)
+    STATS DÉPENDANTES : PA: ${s.PA}, PF: ${s.PF}, Maîtrise: ${s.Maîtrise}, Concentration: ${s.Concentration}, Volonté: ${s.Volonté}, Précision: ${s.Précision}, Vitesse: ${s.Vitesse}
+    PROFIL : Race ${player.race}, Classe ${player.class}, Rang ${player.rank}
+    COMPÉTENCES : ${JSON.stringify(player.skills || [])}
+    ATTRIBUTS : ${JSON.stringify(player.attributes || [])}
+    `;
+};
+
 app.post("/quest/scenario", async (req, res) => {
-  const { player, quest, mode } = req.body;
+    const { player, quest, mode } = req.body;
 
-  if (!player || !quest) {
-    return res.status(400).json({ error: "Données manquantes." });
-  }
+    const systemPrompt = `Tu es l'Oracle Céleste. 
+    Crée une introduction de quête. 
+    Si le mode est 'team', ajoute un PNJ Compagnon qui accompagne le joueur.
+    Prends en compte la race (${player.race}) et la classe (${player.class}) pour adapter l'ambiance.
+    Réponds UNIQUEMENT en JSON.`;
 
-  const systemPrompt = `
-    Tu es l'Oracle Céleste, un MJ de RPG sombre et épique.
-    Ton rôle est de créer l'introduction d'une quête interactive.
-    IMPORTANT : Tu dois définir secrètement un "scénario caché" (ce que le joueur ne sait pas encore).
-    Réponds UNIQUEMENT par un objet JSON.
-  `;
-
-  const userPrompt = `
-    ZONE : ${quest.zoneName}
-    RANG : ${quest.rank}
-    MISSION : ${quest.task}
-    JOUEUR : ${player.name} (${player.race}), Stats: ${JSON.stringify(player.stats)}
-    MODE : ${mode}
-
-    Génère un titre, une intro narrative, et définit les éléments cachés du scénario.
-    Structure JSON :
+    const userPrompt = `
+    QUÊTE: ${quest.title} en zone ${quest.zoneName} (Rang ${quest.rank}).
+    JOUEUR: ${player.name}, ${player.race} ${player.class}.
+    CONTEXTE STATS: ${getStatsContext(player)}
+    
+    Structure JSON attendue:
     {
-      "title": "string",
-      "intro": "L'amorce de l'histoire racontée au joueur",
-      "hidden_plot": "Ce qui se passe réellement en coulisse (ex: une trahison, un monstre tapi dans l'ombre)",
-      "hazard": "Le danger immédiat ou la menace principale",
-      "reward_gold": ${quest.reward_gold || 0}
+        "title": "Titre épique",
+        "intro": "Texte d'intro",
+        "hidden_plot": "Secret de la quête",
+        "companion": {"name": "Nom", "role": "Classe", "personality": "Description"},
+        "hazard": "Menace principale",
+        "reward_gold": ${quest.rewards?.manacoins || 0}
     }
-  `;
+    `;
 
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.8,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ],
-        response_format: { type: "json_object" }
-      })
-    });
-
-    const data = await response.json();
-    res.json(JSON.parse(data.choices[0].message.content));
-  } catch (error) {
-    res.status(500).json({ error: "Erreur Oracle Scenario" });
-  }
+    try {
+        const data = await fetchWithRetry(`${API_URL}?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: userPrompt }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: { responseMimeType: "application/json" }
+            })
+        });
+        res.json(JSON.parse(data.candidates[0].content.parts[0].text));
+    } catch (error) {
+        res.status(500).json({ error: "Erreur Oracle" });
+    }
 });
 
-/**
- * Endpoint POST /quest/progress
- * L'IA réagit à l'action du joueur, joue les ennemis et fait avancer l'intrigue.
- */
 app.post("/quest/progress", async (req, res) => {
-  const { player, quest, action } = req.body;
+    const { player, quest, action } = req.body;
 
-  const systemPrompt = `
-    Tu es l'Oracle Céleste (MJ). Le joueur vient d'effectuer une action. 
-    Tu dois décrire les conséquences, faire avancer l'intrigue et jouer les ennemis/PNJ.
+    const systemPrompt = `Tu es le MJ de l'Oracle Céleste. 
+    Tu dois arbitrer l'action du joueur en respectant ces règles :
+    1. RÉALISME DE CLASSE : Un mage ne peut pas faire d'attaques physiques lourdes. Un guerrier ne peut pas lancer de sorts.
+    2. COOLDOWN : Les Compétences Uniques (rang F) ont 3h de cooldown. Si le joueur en utilise une, vérifie si c'est cohérent.
+    3. CONSOMMATION : Réduis les PV/PM/Endurance selon la difficulté.
+    4. INTERVENTION PNJ : Fais parler ou agir le compagnon (${quest.companion?.name}) si présent.
+    5. ÉLÉMENTS : Respecte les forces/faiblesses élémentaires selon les attributs du joueur.`;
+
+    const userPrompt = `
+    ACTION DU JOUEUR: "${action}"
+    INFOS JOUEUR: ${getStatsContext(player)}
+    HISTORIQUE: ${JSON.stringify(quest.journal.slice(-3))}
+    COMPLOT CACHÉ: ${quest.hidden_plot}
     
-    RÈGLES STRICTES :
-    1. LOGIQUE : Si l'action est risquée, utilise les stats du joueur pour décider du résultat.
-    2. BROUILLARD DE GUERRE : Ne révèle jamais le "hidden_plot" directement. Donne des indices narratifs.
-    3. ANTAGONISME : Si des ennemis sont présents, décris leurs attaques ou leurs mouvements de manière menaçante.
-    4. SANS ABUS : Si le joueur fait une action logique et forte, laisse-le réussir, mais maintiens la tension.
-    5. CHAMP DE VISION : Décris uniquement ce que le personnage peut voir/entendre.
-  `;
+    Décris les conséquences narratives, les dégâts subis/infligés et l'évolution de la scène.`;
 
-  const userPrompt = `
-    CONTEXTE INITIAL : ${quest.intro}
-    COMPLOT CACHÉ : ${quest.hidden_plot}
-    DANGER : ${quest.hazard}
-    HISTORIQUE : ${JSON.stringify(quest.journal || [])}
-    
-    ACTION DU JOUEUR : "${action}"
-    
-    STATS DU JOUEUR : ${JSON.stringify(player.stats)}
-
-    Réponds par un texte narratif court (3-5 phrases) qui décrit ce qui arrive ensuite.
-  `;
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.7,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
-        ]
-      })
-    });
-
-    const data = await response.json();
-    res.json({ aiResponse: data.choices[0].message.content });
-  } catch (error) {
-    res.status(500).json({ aiResponse: "L'Oracle reste muet devant votre action..." });
-  }
+    try {
+        const data = await fetchWithRetry(`${API_URL}?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: userPrompt }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] }
+            })
+        });
+        res.json({ aiResponse: data.candidates[0].content.parts[0].text });
+    } catch (error) {
+        res.status(500).json({ aiResponse: "L'Oracle est troublé par cette action." });
+    }
 });
 
-/**
- * Endpoint POST /quest/resolve
- * Analyse finale basée sur l'ensemble de l'échange narratif
- */
 app.post("/quest/resolve", async (req, res) => {
-  const { player, quest } = req.body;
+    const { player, quest } = req.body;
 
-  const systemPrompt = `
-    Tu es l'Oracle Céleste. Juge final.
-    Analyse si le joueur a triomphé ou péri en fonction de l'historique complet de la quête.
-    Répond UNIQUEMENT en JSON.
-  `;
+    const systemPrompt = `Juge final de l'Oracle. Détermine le succès.
+    Si le journal est trop court ou les actions incohérentes avec la classe/race : ÉCHEC.`;
 
-  const userPrompt = `
-    OBJECTIF : ${quest.title}
-    COMPLOT CACHÉ ÉTAIT : ${quest.hidden_plot}
+    const userPrompt = `
+    Stats finales: ${getStatsContext(player)}
+    Journal: ${JSON.stringify(quest.journal)}
     
-    HISTORIQUE DES ÉCHANGES :
-    ${JSON.stringify(quest.journal)}
-
-    STRUCTURE JSON :
+    JSON attendu:
     {
-      "success": boolean,
-      "reason": "Résumé narratif de la conclusion (victoire ou mort/fuite).",
-      "rewards": { "gold": number, "exp": 25 }
+        "success": boolean,
+        "reason": "Explication narrative",
+        "rewards": {"gold": ${quest.reward_gold}, "exp": 25}
     }
-  `;
+    `;
 
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.5,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" }
-      })
-    });
-
-    const data = await response.json();
-    const result = JSON.parse(data.choices[0].message.content);
-    
-    result.rewards = result.success ? { gold: quest.reward_gold || 0, exp: 25 } : { gold: 0, exp: 5 };
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({ success: false, reason: "Le destin est incertain.", rewards: { gold: 0, exp: 5 } });
-  }
+    try {
+        const data = await fetchWithRetry(`${API_URL}?key=${apiKey}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: userPrompt }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: { responseMimeType: "application/json" }
+            })
+        });
+        res.json(JSON.parse(data.candidates[0].content.parts[0].text));
+    } catch (error) {
+        res.status(500).json({ success: false, reason: "Destin brisé.", rewards: {gold: 0, exp: 5} });
+    }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`L'Oracle est éveillé sur le port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Oracle V2 sur port ${PORT}`));
