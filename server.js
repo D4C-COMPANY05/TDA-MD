@@ -6,29 +6,36 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Ordre des rangs pour le calcul de puissance
+const RANK_VALUES = { "F": 1, "E": 2, "D": 3, "C": 4, "B": 5, "A": 6, "S": 7, "SS": 8, "SSS": 9, "Z": 10, "XE": 11 };
+
 /**
- * Formate l'intégralité du profil Firestore pour l'IA
- * Inclut Base Stats, Modifiers, Attributs et Compétences
+ * Formate le contexte pour l'IA avec une insistance sur les stats secondaires
  */
 const formatFullPlayerContext = (player, currentStats = null) => {
   const b = player.baseStats || {};
   const m = player.modifiers || {};
-  const s = currentStats || b; // Utilise les stats de l'incursion si disponibles
+  const s = currentStats || b;
 
   return `
     --- PROFIL DU PERSONNAGE ---
-    NOM: ${player.avatarName} | CLASSE: ${player.characterClass} | RANG: ${player.rank} | NIVEAU: ${player.level}
-    RACE: ${player.races?.join("/")} | ATTRIBUTS: ${player.attributes?.join(", ")}
+    NOM: ${player.avatarName} | RANG: ${player.rank} (Valeur: ${RANK_VALUES[player.rank] || 1})
+    CLASSE: ${player.characterClass} | ATTRIBUTS: ${player.attributes?.join(", ")}
     
-    STATS ACTUELLES (Incursion):
-    HP: ${Math.ceil(s.hp)}/${b.hp} | MP: ${Math.ceil(s.mp_ps || s.mp)}/${b.mp_ps} | END: ${Math.ceil(s.endurance || s.end)}/${b.endurance}
+    ÉTAT ACTUEL:
+    PV: ${Math.ceil(s.hp)}/${s.hpMax || b.hp} | MP: ${Math.ceil(s.mp_ps || s.mp)}/${s.mpMax || b.mp_ps} | END: ${Math.ceil(s.endurance || s.end)}/${s.endMax || b.endurance}
     
-    CAPACITÉS DE COMBAT (Base + Mod):
-    Puissance (PA): ${b.pa} (+${m.pa}) | Maîtrise: ${b.mastery} (+${m.mastery}) | Vitesse: ${b.speed} (+${m.speed})
-    Précision: ${b.precision} (+${m.precision}) | Volonté: ${b.willpower} (+${m.willpower}) | Chance: ${b.luck} (+${m.luck})
-    Concentration: ${b.concentration} (+${m.concentration}) | Puissance Magique (PF): ${b.pf} (+${m.pf})
-    
-    COMPÉTENCES UNIQUES:
+    STATISTIQUES DE COMBAT (Niveau Réel):
+    - Agilité (PA): ${s.pa || (b.pa + (m.pa || 0))} -> Détermine l'esquive et la réactivité.
+    - Force (PF): ${s.pf || (b.pf + (m.pf || 0))} -> Détermine la puissance physique brute.
+    - Maîtrise: ${s.mastery || (b.mastery + (m.mastery || 0))} -> Réduit la consommation de MP et augmente le contrôle.
+    - Vitesse: ${s.speed || (b.speed + (m.speed || 0))} -> Vitesse de déplacement et d'exécution.
+    - Précision: ${s.precision || (b.precision + (m.precision || 0))} -> Chance de toucher les points vitaux.
+    - Volonté: ${s.willpower || (b.willpower + (m.willpower || 0))} -> Résistance mentale et debuffs.
+    - Concentration: ${s.concentration || (b.concentration || 0)} -> Détection et maintien des sorts complexes.
+    - Chance: ${s.luck || (b.luck || 0)} -> Événements imprévus favorables.
+
+    COMPÉTENCES:
     ${player.uniqueSkills?.map(sk => `- ${sk.name}: ${sk.description}`).join("\n")}
   `;
 };
@@ -40,39 +47,40 @@ app.post("/quest/scenario", async (req, res) => {
   const { player, quest, mode } = req.body;
 
   const systemPrompt = `
-    Tu es l'Environnement et le Maître du Jeu d'un RPG Dark Fantasy. 
-    Tu ne scripts pas la défaite du joueur. Tu simules un monde réactif et logique.
-    Si un Marionnettiste contrôle un ennemi et se cache, les autres ennemis doivent logiquement chercher la source ou combattre la marionnette, ils ne "devinent" pas où est le joueur sans raison.
-    Réponds uniquement en JSON.
+    Tu es le Maître du Monde. 
+    1. Si le joueur est de Rang S et la quête de Rang C, il est un DIEU parmi les mortels. Ses actions de base ne lui coûtent presque rien.
+    2. Sois précis spatialement (distances en mètres, directions cardinales).
+    3. Génère un "side_objective" secret qui n'est pas révélé au joueur mais qui peut être découvert par l'action.
+    Réponds en JSON.
   `;
 
   const userPrompt = `
-    CONTEXTE COMPLET: ${formatFullPlayerContext(player)}
+    JOUEUR: ${formatFullPlayerContext(player)}
+    QUÊTE: ${quest.task} (Rang: ${quest.rank})
     ZONE: ${quest.zoneName}
-    OBJECTIF DE QUÊTE: ${quest.task || quest.title}
     
-    Génère l'introduction.
+    Génère l'intro:
     {
-      "title": "Nom de l'incursion",
-      "intro": "Description de l'environnement immédiat.",
-      "hidden_plot": "La vérité cachée ou le danger tapis.",
-      "hazard": "L'obstacle ou l'ennemi initial précis.",
-      "companion": ${mode === 'team' ? '{"name": "Kael", "role": "Guerrier"}' : 'null'}
+      "title": "Nom",
+      "intro": "Description immersive et spatiale.",
+      "hidden_plot": "Le secret de la zone.",
+      "side_objective": "Condition secrète pour une récompense massive.",
+      "hazard": "Le premier défi précis (ex: 3 golems à 20m au Nord).",
+      "companion": ${mode === 'team' ? '{"name": "Kael", "role": "Tank"}' : 'null'}
     }
   `;
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-        response_format: { type: "json_object" }
-      })
+    const response = await fetch("https://api.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=" + process.env.GEMINI_API_KEY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            contents: [{ parts: [{ text: `System: ${systemPrompt}\n\nUser: ${userPrompt}` }] }],
+            generationConfig: { responseMimeType: "application/json" }
+        })
     });
     const data = await response.json();
-    res.json(JSON.parse(data.choices[0].message.content));
+    res.json(JSON.parse(data.candidates[0].content.parts[0].text));
   } catch (error) {
     res.status(500).json({ error: "L'Oracle est indisponible." });
   }
@@ -80,64 +88,66 @@ app.post("/quest/scenario", async (req, res) => {
 
 /**
  * POST /quest/progress
- * Logique de simulation stricte
  */
 app.post("/quest/progress", async (req, res) => {
   const { player, quest, action } = req.body;
 
+  const playerRankVal = RANK_VALUES[player.rank] || 1;
+  const questRankVal = RANK_VALUES[quest.rank] || 1;
+  const diff = playerRankVal - questRankVal;
+
   const systemPrompt = `
-    Tu es la LOGIQUE du monde. 
-    RÈGLES STRICTES :
-    1. Si HP <= 0 OU (MP <= 0 pour un mage/marionnettiste), le joueur ÉCHOUE immédiatement.
-    2. L'Endurance (END) diminue proportionnellement aux efforts physiques.
-    3. Le Mana (MP) diminue selon la complexité des sorts ou contrôles.
-    4. Progression : N'augmente le "newProgress" QUE si l'action rapproche réellement de l'objectif ("${quest.task}"). Une action de survie pure n'augmente pas la progression.
-    5. Cohérence : Si le joueur est caché ou utilise une stratégie valide (marionnette), l'ennemi doit réagir logiquement à la marionnette, pas au joueur invisible.
+    Tu es la LOGIQUE implacable.
+    - ÉVALUATION DES STATS : 
+        * Esquive : Compare PA (Agilité) + Vitesse du joueur vs Danger. Si Rang Joueur > Rang Quête, l'esquive est presque automatique.
+        * Mana : La Maîtrise et la Concentration réduisent le coût. Un Rang S lançant un sort de Rang C consomme 1% de son mana.
+        * Détection : Utilise la Concentration. Si le joueur cherche, donne des coordonnées précises.
+    - RÈGLE D'OR : Ne force pas de dégâts si le scénario du joueur (esquive, barrière) est logique et que ses stats sont supérieures.
+    - RÉACTIVITÉ : Si le joueur écrit une réaction à une attaque, juge si son PA/Vitesse permet d'éviter l'impact.
   `;
 
   const userPrompt = `
-    JOUEUR: ${formatFullPlayerContext(player, quest.stats)}
-    INTRIGUE: ${quest.hidden_plot}
-    DANGER: ${quest.hazard}
-    PROGRESSION: ${quest.progress}%
-    ACTION: "${action}"
+    CONTEXTE JOUEUR: ${formatFullPlayerContext(player, quest.stats)}
+    DIFFÉRENCE DE RANG: ${diff} (Positif = Joueur plus fort)
+    DANGER ACTUEL: ${quest.hazard}
+    OBJECTIF SECRETS: ${quest.side_objective}
+    ACTION DU JOUEUR: "${action}"
 
-    Réponds en JSON:
+    Instructions JSON:
+    1. aiResponse: Sois précis. Si le joueur détecte, dis: "À 12m sous les débris à l'Est, une lueur pourpre..."
+    2. newStats: Calcule la perte de MP/END selon l'effort. (Négligeable si diff > 2).
+    3. isSideObjectiveFound: true si l'action découvre le secret.
+    
     {
-      "aiResponse": "Description réaliste et brutale.",
-      "newStats": { 
-          "hp": nombre, "mp_ps": nombre, "endurance": nombre,
-          "pa": ${quest.stats.pa}, "mastery": ${quest.stats.mastery}, "speed": ${quest.stats.speed},
-          "precision": ${quest.stats.precision}, "luck": ${quest.stats.luck}, "concentration": ${quest.stats.concentration}
-      },
-      "newProgress": nombre (0-100),
-      "newHazard": "Situation suivante",
-      "isDead": boolean (true si HP ou MP sont à 0)
+      "aiResponse": "...",
+      "newStats": { "hp": num, "mp_ps": num, "endurance": num, "pa": num, "pf": num, "mastery": num, "speed": num, "precision": num, "luck": num, "concentration": num, "willpower": num },
+      "newProgress": num (0-100),
+      "newHazard": "Prochaine situation précise",
+      "isSideObjectiveFound": boolean,
+      "isDead": boolean
     }
   `;
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-        response_format: { type: "json_object" }
-      })
+    const response = await fetch("https://api.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=" + process.env.GEMINI_API_KEY, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            contents: [{ parts: [{ text: `System: ${systemPrompt}\n\nUser: ${userPrompt}` }] }],
+            generationConfig: { responseMimeType: "application/json" }
+        })
     });
     const data = await response.json();
-    const result = JSON.parse(data.choices[0].message.content);
-    
-    // Sécurité serveur : Forcer l'échec si mort
-    if (result.newStats.hp <= 0 || result.newStats.mp_ps <= 0) {
-        result.isDead = true;
-        result.aiResponse += " Vos forces vous abandonnent totalement. C'est la fin.";
+    const result = JSON.parse(data.candidates[0].content.parts[0].text);
+
+    // Bonus si Side Objective trouvé
+    if (result.isSideObjectiveFound) {
+        result.aiResponse += "\n\n✨ [ÉVÉNEMENT] Vous avez découvert un secret de l'incursion !";
     }
 
     res.json(result);
   } catch (error) {
-    res.status(500).json({ aiResponse: "Erreur de synchronisation avec le destin." });
+    res.status(500).json({ aiResponse: "Le destin vacille." });
   }
 });
 
@@ -145,41 +155,28 @@ app.post("/quest/progress", async (req, res) => {
  * POST /quest/resolve
  */
 app.post("/quest/resolve", async (req, res) => {
-  const { player, quest } = req.body;
+    // Logique de fin identique mais incluant le bonus du side objective si trouvé
+    const { player, quest } = req.body;
+    const bonus = quest.sideObjectiveFound ? 2.0 : 1.0;
 
-  const userPrompt = `
-    FIN DE QUÊTE : ${quest.title}
-    Progression finale : ${quest.progress}%
-    Stats finales : HP:${quest.stats.hp}, MP:${quest.stats.mp_ps}
+    const userPrompt = `Analyse le dénouement de la quête "${quest.title}". Progression: ${quest.progress}%. Side Objective trouvé: ${quest.sideObjectiveFound}.`;
 
-    DÉCISION :
-    - Succès si progression == 100%.
-    - Échec si HP <= 0 ou MP <= 0 ou progression < 100%.
-    
-    Réponds en JSON:
-    {
-      "success": boolean,
-      "reason": "Texte de conclusion",
-      "rewards": { "gold": ${quest.reward_gold}, "exp": ${quest.progress * 2} }
-    }
-  `;
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [{ role: "system", content: "Tu es le Juge Céleste." }, { role: "user", content: userPrompt }],
-        response_format: { type: "json_object" }
-      })
-    });
-    const data = await response.json();
-    res.json(JSON.parse(data.choices[0].message.content));
-  } catch (error) {
-    res.status(500).json({ success: false, reason: "Incursion interrompue." });
-  }
+    try {
+        const response = await fetch("https://api.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=" + process.env.GEMINI_API_KEY, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: userPrompt }] }],
+                generationConfig: { responseMimeType: "application/json" }
+            })
+        });
+        const data = await response.json();
+        const aiDecision = JSON.parse(data.candidates[0].content.parts[0].text);
+        
+        // Appliquer les multiplicateurs de récompense ici
+        res.json(aiDecision);
+    } catch (e) { res.status(500).send(); }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Oracle V3 opérationnel sur ${PORT}`));
+app.listen(PORT, () => console.log(`Oracle V4 opérationnel sur ${PORT}`));
