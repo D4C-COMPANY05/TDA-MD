@@ -138,9 +138,9 @@ const newStats = {
       progress: result.progress ?? quest.progress ?? 0,
       hazard: ws.newHazard || "Zone stable",
       secretFound: !!(ws.secretFound || quest.secretFound),
-      isDead: !!ws.isDead,
+      isDead: !!(ws.isDead || result.isDead),
       chronicle: updatedChronicle,
-      flags: ws.flagsUpdated || flags
+      flags: ws.flagsUpdated || result.flagsUpdated || flags
     };
 
 
