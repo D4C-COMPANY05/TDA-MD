@@ -35,7 +35,7 @@ ${player.uniqueSkills?.map(sk => `- ${sk.name}: ${sk.description}`).join("\n")}
 
 /* ===================== SCÉNARIO ===================== */
 app.post("/quest/scenario", async (req, res) => {
-  const { player, quest, mode } = req.body;
+  const { player, quest } = req.body;
   const systemPrompt = `Tu es le Maître du Jeu. Joueur [${player.rank}] vs Quête [${quest.rank}]. Réponds uniquement en JSON.`;
   const userPrompt = `
 CONTEXTE: ${formatFullPlayerContext(player)}
@@ -68,26 +68,24 @@ JSON STRICT:
         response_format: { type: "json_object" }
       })
     });
+    
     const data = await response.json();
     const parsed = JSON.parse(data.choices[0].message.content);
 
-if (!parsed || typeof parsed !== "object") {
-  throw new Error("Scénario invalide");
-}
+    // Sécurité renforcée pour éviter l'erreur "Incursion Inconnue"
+    const safeScenario = {
+      title: parsed.title || quest.title || "Incursion Sans Nom",
+      intro: parsed.intro || "Le destin refuse encore de se dévoiler.",
+      hidden_plot: parsed.hidden_plot || "Mystère latent",
+      secret_objective: parsed.secret_objective || "Survivre",
+      hazard: parsed.hazard || "Zone initiale",
+      chronicle: parsed.chronicle || "L'incursion commence."
+    };
 
-const safeScenario = {
-  title: parsed.title ?? quest.title ?? "Incursion Sans Nom",
-  intro: parsed.intro ?? "Le destin refuse encore de se dévoiler.",
-  hidden_plot: parsed.hidden_plot ?? null,
-  secret_objective: parsed.secret_objective ?? null,
-  hazard: parsed.hazard ?? "Zone initiale",
-  chronicle: parsed.chronicle ?? "L'incursion commence."
-};
-
-res.json(safeScenario);
+    res.json(safeScenario);
 
   } catch (e) {  
-    console.error(e);
+    console.error("ERREUR SCENARIO:", e);
     res.status(500).json({ error: "L'Oracle est sourd." });  
   }  
 });
@@ -190,7 +188,7 @@ app.post("/quest/resolve", async (req, res) => {
       headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: "Tu es le juge final. Détermine si c'est un succès ou un échec." }, { role: "user", content: userPrompt }],
+        messages: [{ role: "system", content: "Tu es le juge final." }, { role: "user", content: userPrompt }],
         response_format: { type: "json_object" }
       })
     });
