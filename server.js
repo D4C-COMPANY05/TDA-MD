@@ -7,6 +7,7 @@ app.use(express.json());
 app.use(cors());
 
 const RANGS_ORDRE = ["F", "E", "D", "C", "B", "A", "S", "SS", "SSS", "Z", "XE"];
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 const formatFullPlayerContext = (player, currentStats = null) => {
   const b = player.baseStats || {};
@@ -14,54 +15,30 @@ const formatFullPlayerContext = (player, currentStats = null) => {
   const s = currentStats || b;
 
   return `
-    --- PROFIL DU PERSONNAGE ---
-    NOM: ${player.avatarName} | CLASSE: ${player.characterClass} | RANG: ${player.rank} | LVL: ${player.level}
-    ATTRIBUTS: ${player.attributes?.join(", ")}
-    
-    UNITÉS VITALES ACTUELLES:
-    HP: ${Math.ceil(s.hp)}/${s.hpMax || b.hp} | MP: ${Math.ceil(s.mp_ps || s.mp)}/${s.mpMax || b.mp_ps} | END: ${Math.ceil(s.endurance || s.end)}/${s.endMax || b.endurance}
-    
-    STATISTIQUES DE COMBAT PRÉCISES:
-    - Agilité (PA): ${s.pa || (b.pa + (m.pa||0))}
-    - Force/Puissance (PF): ${s.pf || (b.pf + (m.pf||0))}
-    - Maîtrise: ${s.mastery || (b.mastery + (m.mastery||0))}
-    - Vitesse: ${s.speed || (b.speed + (m.speed||0))}
-    - Précision: ${s.precision || (b.precision + (m.precision||0))}
-    - Volonté: ${s.willpower || (b.willpower + (m.willpower||0))}
-    - Concentration: ${s.concentration || (b.concentration + (m.concentration||0))}
-    - Chance: ${s.luck || (b.luck + (m.luck||0))}
-    
-    COMPÉTENCES:
-    ${player.uniqueSkills?.map(sk => `- ${sk.name}: ${sk.description}`).join("\n")}
-  `;
+--- PROFIL DU PERSONNAGE ---
+NOM: ${player.avatarName} | CLASSE: ${player.characterClass} | RANG: ${player.rank} | LVL: ${player.level}
+ATTRIBUTS: ${player.attributes?.join(", ")}
+
+UNITÉS VITALES ACTUELLES:
+PV: ${Math.ceil(s.pv || s.hp)}/${s.pvMax || b.pvMax || b.hp}
+MP: ${Math.ceil(s.mp_ps || s.mp)}/${s.mpMax || b.mpMax || b.mp_ps}
+ENDURANCE: ${Math.ceil(s.endurance || s.end)}/${s.endMax || b.endMax || b.endurance}
+
+STATISTIQUES DE COMBAT:
+PA: ${s.pa || (b.pa + (m.pa || 0))} | PF: ${s.pf || (b.pf + (m.pf || 0))} | MAÎTRISE: ${s.mastery}
+VITESSE: ${s.speed} | PRÉCISION: ${s.precision} | VOLONTÉ: ${s.willpower}
+
+COMPÉTENCES:
+${player.uniqueSkills?.map(sk => `- ${sk.name}: ${sk.description}`).join("\n")}
+`;
 };
 
+/* ===================== SCÉNARIO ===================== */
 app.post("/quest/scenario", async (req, res) => {
   const { player, quest, mode } = req.body;
-
-  const systemPrompt = `
-    Tu es l'Environnement et le Maître du Jeu.
-    CONSIGNE DE RANG : Le joueur est rang ${player.rank} et la quête est rang ${quest.rank}. 
-    Si le rang du joueur est supérieur, il est écrasant de puissance.
-    Génère un "secret_objective" (scénario caché).
-    Réponds en JSON uniquement.
-  `;
-
-  const userPrompt = `
-    CONTEXTE: ${formatFullPlayerContext(player)}
-    ZONE: ${quest.zoneName}
-    OBJECTIF: ${quest.task || quest.title}
-    
-    Génère l'intro:
-    {
-      "title": "Nom",
-      "intro": "Description",
-      "hidden_plot": "Le fil conducteur",
-      "secret_objective": "Condition cachée",
-      "hazard": "Danger initial précis (ex: '3 golems à 20m au Nord')",
-      "companion": ${mode === 'team' ? '{"name": "Kael", "role": "Guerrier"}' : 'null'}
-    }
-  `;
+  const systemPrompt = `Tu es le Maître du Jeu. Joueur [${player.rank}] vs Quête [${quest.rank}]. Réponds uniquement en JSON.`;
+  const userPrompt = `CONTEXTE: ${formatFullPlayerContext(player)} | ZONE: ${quest.zoneName} | OBJECTIF: ${quest.task || quest.title}
+  JSON attendu: {"title": "...", "intro": "...", "hidden_plot": "...", "secret_objective": "...", "hazard": "État initial (Position/Ennemis)", "chronicle": "L'incursion commence."}`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -75,59 +52,50 @@ app.post("/quest/scenario", async (req, res) => {
     });
     const data = await response.json();
     res.json(JSON.parse(data.choices[0].message.content));
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: "L'Oracle est sourd." });
   }
 });
 
+/* ===================== PROGRESSION ===================== */
 app.post("/quest/progress", async (req, res) => {
-  const { player, quest, action } = req.body;
+  const { player, quest, action, debug = false } = req.body;
 
-  // RÉCUPÉRATION DE L'HISTORIQUE (Journal) pour la mémoire
-  const history = quest.journal ? quest.journal.slice(-6).map(j => `${j.type === 'player' ? 'Joueur' : 'Monde'}: ${j.text}`).join("\n") : "Aucun historique.";
+  const chronicle = quest.chronicle || "Début de la quête.";
+  const flags = quest.flags || [];
 
   const systemPrompt = `
-    Tu es la MÉMOIRE ET LA LOGIQUE du monde.
-    
-    IMPORTANT : Tu dois te souvenir des événements passés. Ne répète pas des dangers déjà éliminés ou des positions déjà atteintes.
-    
-    RÈGLES DE CALCUL :
-    - ESQUIVE/RÉACTION : Utilise PA (Agilité) + Vitesse. Un rang S esquive presque tout d'un rang C.
-    - PUISSANCE : PF (Force) détermine les dégâts massifs.
-    - MANA : Consommation précise. Un sort mineur pour un rang S coûte 0.1 MP. Un sort de destruction massif coûte cher.
-    - DÉTECTION : Utilise Précision/Concentration pour des lieux EXACTS.
-    
-    RÈGLES DE CONTINUITÉ :
-    - Si le joueur a déjà vaincu ou contrôlé des ennemis dans le Nord, ne dis pas qu'ils y sont encore.
-    - Si le joueur répand sa magie, décris ce qu'il perçoit au-delà de sa position actuelle.
-  `;
+Tu es la MÉMOIRE CANONIQUE et la LOGIQUE DU MONDE.
+- Basé UNIQUEMENT sur la chronique.
+- Aucun ennemi déjà vaincu ne réapparaît.
+- CONSOMMATION OBLIGATOIRE : Déduis des pvLoss, mpLoss et endLoss. 
+  * Un sort de Rang S coûte entre 5 et 40 PM (mp_ps).
+  * Un effort physique coûte entre 5 et 20 ENDURANCE.
+- ÉTAT DU MONDE (newHazard) : Doit impérativement mettre à jour la POSITION et les ENNEMIS restants.
+- Applique les flags: ${flags.join(", ")}.
+`;
 
   const userPrompt = `
-    HISTORIQUE RÉCENT :
-    ${history}
+CHRONIQUE ACTUELLE: ${chronicle}
+JOUEUR: ${formatFullPlayerContext(player, quest.stats)}
+DANGER/ÉTAT PRÉCÉDENT: ${quest.hazard}
+ACTION: "${action}"
 
-    JOUEUR ACTUEL: ${formatFullPlayerContext(player, quest.stats)}
-    OBJECTIF : ${quest.task} | SECRET: ${quest.secret_objective}
-    DANGER PRÉCÉDENT : ${quest.hazard}
-    ACTION DU JOUEUR : "${action}"
-
-    Réponds en JSON:
-    {
-      "aiResponse": "Description précise tenant compte de l'historique.",
-      "newStats": { 
-          "hp": nombre, "mp_ps": nombre, "endurance": nombre,
-          "hpMax": ${quest.stats.hpMax}, "mpMax": ${quest.stats.mpMax}, "endMax": ${quest.stats.endMax},
-          "pa": ${quest.stats.pa}, "pf": ${quest.stats.pf}, "mastery": ${quest.stats.mastery}, 
-          "speed": ${quest.stats.speed}, "precision": ${quest.stats.precision}, 
-          "luck": ${quest.stats.luck}, "concentration": ${quest.stats.concentration},
-          "willpower": ${quest.stats.willpower}
-      },
-      "newProgress": nombre (0-100),
-      "newHazard": "Nouvel état de l'environnement (ex: '2 golems détruits, 1 sous contrôle. Reste 12 golems dans la grotte à l'Est')",
-      "secretFound": ${quest.secretFound || false},
-      "isDead": boolean
-    }
-  `;
+Réponds STRICTEMENT en JSON:
+{
+  "narrative": "Description visible",
+  "worldState": {
+    "pvLoss": number,
+    "mpLoss": number,
+    "endLoss": number,
+    "newHazard": "Position actuelle | Ennemis restants",
+    "flagsUpdated": [],
+    "secretFound": boolean,
+    "isDead": boolean
+  },
+  "progress": number
+}
+`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -139,33 +107,43 @@ app.post("/quest/progress", async (req, res) => {
         response_format: { type: "json_object" }
       })
     });
+
     const data = await response.json();
     const result = JSON.parse(data.choices[0].message.content);
 
-    result.newStats.hpMax = quest.stats.hpMax;
-    result.newStats.mpMax = quest.stats.mpMax;
-    result.newStats.endMax = quest.stats.endMax;
+    // Synchronisation avec les clés PV / MP_PS / ENDURANCE
+    const s = quest.stats;
+    const newStats = {
+      ...s,
+      pv: clamp((s.pv || s.hp) - (result.worldState.pvLoss || 0), 0, s.pvMax || s.hpMax),
+      mp_ps: clamp((s.mp_ps || s.mp) - (result.worldState.mpLoss || 0), 0, s.mpMax || s.mp_psMax),
+      endurance: clamp((s.endurance || s.end) - (result.worldState.endLoss || 0), 0, s.endMax)
+    };
 
-    res.json(result);
-  } catch (error) {
+    // Mise à jour de la chronique simplifiée pour la mémoire de l'IA
+    const updatedChronicle = `${chronicle}\n- Action: ${action} | Résultat: ${result.worldState.newHazard}`;
+
+    const output = {
+      narrative: result.narrative,
+      newStats,
+      progress: result.progress || quest.progress,
+      hazard: result.worldState.newHazard,
+      secretFound: result.worldState.secretFound || quest.secretFound,
+      isDead: result.worldState.isDead,
+      chronicle: updatedChronicle,
+      flags: result.worldState.flagsUpdated || flags
+    };
+
+    res.json(output);
+  } catch (e) {
     res.status(500).json({ aiResponse: "Le destin vacille." });
   }
 });
 
+/* ===================== RÉSOLUTION ===================== */
 app.post("/quest/resolve", async (req, res) => {
-  const { player, quest } = req.body;
-
-  const userPrompt = `
-    FIN DE QUÊTE : ${quest.title}
-    Progression : ${quest.progress}% | Secret : ${quest.secretFound ? 'TROUVÉ' : 'NON'}
-    
-    Réponds en JSON:
-    {
-      "success": boolean,
-      "reason": "Texte de conclusion",
-      "rewards": { "gold": ${quest.secretFound ? quest.reward_gold * 3 : quest.reward_gold}, "exp": ${quest.progress * 3} }
-    }
-  `;
+  const { quest } = req.body;
+  const userPrompt = `FIN DE QUÊTE: ${quest.title} | PROGRÈS: ${quest.progress}% | SECRET: ${quest.secretFound}. JSON: {"success":boolean, "reason":"...", "rewards":{"gold":0, "exp":0}}`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
@@ -173,16 +151,16 @@ app.post("/quest/resolve", async (req, res) => {
       headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: "Le Juge." }, { role: "user", content: userPrompt }],
+        messages: [{ role: "system", content: "Juge." }, { role: "user", content: userPrompt }],
         response_format: { type: "json_object" }
       })
     });
     const data = await response.json();
     res.json(JSON.parse(data.choices[0].message.content));
-  } catch (error) {
+  } catch {
     res.status(500).json({ success: false, reason: "Erreur finale." });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Oracle V3.2 - Mémoire Active`));
+app.listen(PORT, () => console.log("Oracle V4.3 - PV/MP_PS Ready"));
