@@ -20,9 +20,9 @@ NOM: ${player.avatarName} | CLASSE: ${player.characterClass} | RANG: ${player.ra
 ATTRIBUTS: ${player.attributes?.join(", ")}
 
 UNITÉS VITALES ACTUELLES:
-HP: ${Math.ceil(s.hp || s.hp)}/${s.hpMax || b.hpMax || b.hp}
-MP: ${Math.ceil(s.mp_ps || s.mp)}/${s.mp_psMax || b.mp_psMax || b.mp_ps}
-ENDURANCE: ${Math.ceil(s.endurance || s.end)}/${s.endMax || b.endMax || b.endurance}
+HP: ${Math.ceil(s.hp ?? (b.hp + (m.hp || 0)))}/${s.hpMax || (b.hp + (m.hp || 0))}
+MP: ${Math.ceil(s.mp_ps ?? (b.mp_ps + (m.mp_ps || 0)))}/${s.mp_psMax || (b.mp_ps + (m.mp_ps || 0))}
+ENDURANCE: ${Math.ceil(s.endurance ?? (b.endurance + (m.endurance || 0)))}/${s.endMax || (b.endurance + (m.endurance || 0))}
 
 STATISTIQUES DE COMBAT:
 PA: ${s.pa || (b.pa + (m.pa || 0))} | PF: ${s.pf || (b.pf + (m.pf || 0))} | MAÎTRISE: ${s.mastery}
@@ -51,15 +51,32 @@ app.post("/quest/scenario", async (req, res) => {
       })
     });
     const data = await response.json();
-    res.json(JSON.parse(data.choices[0].message.content));
-  } catch {
-    res.status(500).json({ error: "L'Oracle est sourd." });
-  }
+    const parsed = JSON.parse(data.choices[0].message.content);
+
+if (!parsed || typeof parsed !== "object") {
+  throw new Error("Scénario invalide");
+}
+
+const safeScenario = {
+  title: parsed.title ?? quest.title ?? "Incursion Sans Nom",
+  intro: parsed.intro ?? "Le destin refuse encore de se dévoiler.",
+  hidden_plot: parsed.hidden_plot ?? null,
+  secret_objective: parsed.secret_objective ?? null,
+  hazard: parsed.hazard ?? "Zone initiale",
+  chronicle: parsed.chronicle ?? "L'incursion commence."
+};
+
+res.json(safeScenario);
+
+  } catch (e) {  
+    console.error(e);
+    res.status(500).json({ error: "L'Oracle est sourd." });  
+  }  
 });
 
 /* ===================== PROGRESSION ===================== */
 app.post("/quest/progress", async (req, res) => {
-  const { player, quest, action, debug = false } = req.body;
+  const { player, quest, action } = req.body;
 
   const chronicle = quest.chronicle || "Début de la quête.";
   const flags = quest.flags || [];
@@ -110,48 +127,38 @@ Réponds STRICTEMENT en JSON:
 
     const data = await response.json();
     const result = JSON.parse(data.choices[0].message.content);
-    // Sécurité : Si l'IA a mal formé le JSON
-if (!result.worldState) {
-  result.worldState = { hpLoss: 0, mp_psLoss: 0, endLoss: 0, newHazard: quest.hazard || "RAS" };
-}
 
-    // Synchronisation avec les clés hp / MP_PS / ENDURANCE
-    // Remplace ton bloc newStats par celui-ci :
-const s = quest.stats || {};
-const ws = result.worldState || {};
+    const s = quest.stats || {};
+    const ws = result.worldState || { hpLoss: 0, mp_psLoss: 0, endLoss: 0, newHazard: quest.hazard };
 
-const newStats = {
-  ...s,
-  hp: clamp(Number(s.hp || 0) - Number(ws.hpLoss || 0), 0, Number(s.hpMax || 100)),
-  mp_ps: clamp(Number(s.mp_ps || 0) - Number(ws.mp_psLoss || 0), 0, Number(s.mp_psMax || 100)),
-  endurance: clamp(Number(s.endurance || 0) - Number(ws.endLoss || 0), 0, Number(s.endMax || 100))
-};
-
-
-    // Mise à jour de la chronique simplifiée pour la mémoire de l'IA
-    const updatedChronicle = `${chronicle}\n- Action: ${action} | Résultat: ${result.worldState.newHazard || "Action effectuée"}`;
-
-
-        const output = {
-      narrative: result.narrative || "L'Oracle reste silencieux sur les détails...",
-      newStats,
-      progress: result.progress ?? quest.progress ?? 0,
-      hazard: ws.newHazard || "Zone stable",
-      secretFound: !!(ws.secretFound || quest.secretFound),
-      isDead: !!(ws.isDead || result.isDead),
-      chronicle: updatedChronicle,
-      flags: ws.flagsUpdated || result.flagsUpdated || flags
+    const newStats = {
+      ...s,
+      hp: clamp(Number(s.hp ?? s.hpMax ?? 100) - Number(ws.hpLoss || 0), 0, Number(s.hpMax || 100)),
+      mp_ps: clamp(Number(s.mp_ps ?? s.mp_psMax ?? 100) - Number(ws.mp_psLoss || 0), 0, Number(s.mp_psMax || 100)),
+      endurance: clamp(Number(s.endurance ?? s.endMax ?? 100) - Number(ws.endLoss || 0), 0, Number(s.endMax || 100))
     };
 
+    const updatedChronicle = `${chronicle}\n- Action: ${action} | Résultat: ${ws.newHazard || "Action effectuée"}`;
+
+    const output = {
+      narrative: result.narrative || "L'action s'accomplit.",
+      newStats,
+      progress: clamp(result.progress ?? quest.progress ?? 0, 0, 100),
+      hazard: ws.newHazard || quest.hazard,
+      secretFound: !!(ws.secretFound || quest.secretFound),
+      isDead: !!(ws.isDead || (newStats.hp <= 0)),
+      chronicle: updatedChronicle,
+      flags: ws.flagsUpdated || flags
+    };
 
     res.json(output);
   } catch (e) {
-  console.error("ERREUR SERVEUR:", e.message); // Ceci apparaîtra dans tes logs Render/Terminal
-  res.status(500).json({ 
-    aiResponse: "Le destin vacille.", 
-    debug: e.message 
-  });
- }
+    console.error("ERREUR SERVEUR:", e.message);
+    res.status(500).json({ 
+      aiResponse: "Le destin vacille.", 
+      debug: e.message 
+    });
+  }
 });
 
 /* ===================== RÉSOLUTION ===================== */
@@ -165,16 +172,16 @@ app.post("/quest/resolve", async (req, res) => {
       headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: "Juge." }, { role: "user", content: userPrompt }],
+        messages: [{ role: "system", content: "Tu es le juge final. Détermine si c'est un succès ou un échec." }, { role: "user", content: userPrompt }],
         response_format: { type: "json_object" }
       })
     });
     const data = await response.json();
     res.json(JSON.parse(data.choices[0].message.content));
-  } catch {
-    res.status(500).json({ success: false, reason: "Erreur finale." });
+  } catch (e) {
+    res.status(500).json({ success: false, reason: "Erreur lors du dénouement." });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Oracle V4.3")); 
+app.listen(PORT, () => console.log("Oracle V4.3 Operational"));
