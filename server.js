@@ -37,8 +37,26 @@ ${player.uniqueSkills?.map(sk => `- ${sk.name}: ${sk.description}`).join("\n")}
 app.post("/quest/scenario", async (req, res) => {
   const { player, quest, mode } = req.body;
   const systemPrompt = `Tu es le Maître du Jeu. Joueur [${player.rank}] vs Quête [${quest.rank}]. Réponds uniquement en JSON.`;
-  const userPrompt = `CONTEXTE: ${formatFullPlayerContext(player)} | ZONE: ${quest.zoneName} | OBJECTIF: ${quest.task || quest.title}
-  JSON attendu: {"title": "...", "intro": "...", "hidden_plot": "...", "secret_objective": "...", "hazard": "État initial (Position/Ennemis)", "chronicle": "L'incursion commence."}`;
+  const userPrompt = `
+CONTEXTE: ${formatFullPlayerContext(player)}
+ZONE: ${quest.zoneName}
+OBJECTIF: ${quest.task || quest.title}
+
+⚠️ OBLIGATION ABSOLUE :
+- "title" doit être un titre narratif court
+- "intro" doit être un paragraphe immersif
+- Aucun champ ne peut être null ou vide
+
+JSON STRICT:
+{
+  "title": "string",
+  "intro": "string",
+  "hidden_plot": "string",
+  "secret_objective": "string",
+  "hazard": "string",
+  "chronicle": "string"
+}
+`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
