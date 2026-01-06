@@ -20,7 +20,7 @@ NOM: ${player.avatarName} | CLASSE: ${player.characterClass} | RANG: ${player.ra
 ATTRIBUTS: ${player.attributes?.join(", ")}
 
 UNITÉS VITALES ACTUELLES:
-PV: ${Math.ceil(s.pv || s.hp)}/${s.pvMax || b.pvMax || b.hp}
+HP: ${Math.ceil(s.hp || s.hp)}/${s.hpMax || b.hpMax || b.hp}
 MP: ${Math.ceil(s.mp_ps || s.mp)}/${s.mpMax || b.mpMax || b.mp_ps}
 ENDURANCE: ${Math.ceil(s.endurance || s.end)}/${s.endMax || b.endMax || b.endurance}
 
@@ -68,7 +68,7 @@ app.post("/quest/progress", async (req, res) => {
 Tu es la MÉMOIRE CANONIQUE et la LOGIQUE DU MONDE.
 - Basé UNIQUEMENT sur la chronique.
 - Aucun ennemi déjà vaincu ne réapparaît.
-- CONSOMMATION OBLIGATOIRE : Déduis des pvLoss, mpLoss et endLoss. 
+- CONSOMMATION OBLIGATOIRE : Déduis des hpLoss, mpLoss et endLoss. 
   * Un sort de Rang S coûte entre 5 et 40 PM (mp_ps).
   * Un effort physique coûte entre 5 et 20 ENDURANCE.
 - ÉTAT DU MONDE (newHazard) : Doit impérativement mettre à jour la POSITION et les ENNEMIS restants.
@@ -85,7 +85,7 @@ Réponds STRICTEMENT en JSON:
 {
   "narrative": "Description visible",
   "worldState": {
-    "pvLoss": number,
+    "hpLoss": number,
     "mpLoss": number,
     "endLoss": number,
     "newHazard": "Position actuelle | Ennemis restants",
@@ -111,11 +111,11 @@ Réponds STRICTEMENT en JSON:
     const data = await response.json();
     const result = JSON.parse(data.choices[0].message.content);
 
-    // Synchronisation avec les clés PV / MP_PS / ENDURANCE
+    // Synchronisation avec les clés hp / MP_PS / ENDURANCE
     const s = quest.stats;
     const newStats = {
       ...s,
-      pv: clamp((s.pv || s.hp) - (result.worldState.pvLoss || 0), 0, s.pvMax || s.hpMax),
+      hp: clamp((s.hp || s.hp) - (result.worldState.hpLoss || 0), 0, s.hpMax || s.hpMax),
       mp_ps: clamp((s.mp_ps || s.mp) - (result.worldState.mpLoss || 0), 0, s.mpMax || s.mp_psMax),
       endurance: clamp((s.endurance || s.end) - (result.worldState.endLoss || 0), 0, s.endMax)
     };
@@ -163,4 +163,4 @@ app.post("/quest/resolve", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Oracle V4.3 - PV/MP_PS Ready"));
+app.listen(PORT, () => console.log("Oracle V4.3"));
