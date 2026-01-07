@@ -40,71 +40,122 @@ app.post("/quest/scenario", async (req, res) => {
   const { player, quest, mode } = req.body;
 
   const systemPrompt = `
-    Tu es l'Environnement et le Maître du Jeu.
+    Tu es l'Environnement et le Maître du Jeu d'un RPG épique.
     CONSIGNE DE RANG : Le joueur est rang ${player.rank} et la quête est rang ${quest.rank}. 
-    Si le rang du joueur est supérieur, il est écrasant de puissance.
-    Génère un "secret_objective" (scénario caché).
-    Réponds en JSON uniquement.
+    Si le rang du joueur est supérieur, il est écrasant de puissance. Adapte la difficulté en conséquence.
+    
+    IMPORTANT : Tu DOIS générer un objet JSON valide avec TOUS les champs requis.
+    Ne génère JAMAIS de texte avant ou après le JSON.
+    
+    Réponds UNIQUEMENT avec un objet JSON contenant :
+    - title (string) : Titre épique de la quête
+    - intro (string) : Description immersive du scénario de départ
+    - hidden_plot (string) : Le fil conducteur caché de l'aventure
+    - secret_objective (string) : Condition secrète pour bonus
+    - hazard (string) : Danger initial précis avec positions exactes
+    - companion (object ou null) : Compagnon si mode équipe
   `;
 
   const userPrompt = `
-    CONTEXTE: ${formatFullPlayerContext(player)}
-    ZONE: ${quest.zoneName}
-    OBJECTIF: ${quest.task || quest.title}
+    CONTEXTE DU PERSONNAGE:
+    ${formatFullPlayerContext(player)}
     
-    Génère l'intro:
+    ZONE D'AVENTURE: ${quest.zoneName}
+    OBJECTIF PRINCIPAL: ${quest.task || quest.title}
+    MODE: ${mode === 'team' ? 'Équipe (avec compagnon)' : 'Solo'}
+    
+    Génère le scénario d'introduction avec TOUS les champs requis en JSON strict :
     {
-      "title": "Nom",
-      "intro": "Description",
-      "hidden_plot": "Le fil conducteur",
-      "secret_objective": "Condition cachée",
-      "hazard": "Danger initial précis (ex: '3 golems à 20m au Nord')",
-      "companion": ${mode === 'team' ? '{"name": "Kael", "role": "Guerrier"}' : 'null'}
+      "title": "Un titre épique",
+      "intro": "Une description immersive captivante",
+      "hidden_plot": "Le véritable enjeu caché",
+      "secret_objective": "Condition secrète bonus",
+      "hazard": "Danger initial précis avec positions (ex: '3 golems de pierre à 20m au Nord, niveau ${quest.rank}')",
+      "companion": ${mode === 'team' ? '{"name": "Nom", "role": "Rôle", "specialty": "Spécialité"}' : 'null'}
     }
   `;
 
   try {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },
+      headers: { 
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, 
+        "Content-Type": "application/json" 
+      },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-        response_format: { type: "json_object" }
+        messages: [
+          { role: "system", content: systemPrompt }, 
+          { role: "user", content: userPrompt }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.8
       })
     });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.status}`);
+    }
+
     const data = await response.json();
-console.log("RAW OPENAI RESPONSE:", data.choices[0].message.content);
+    const rawContent = data.choices[0].message.content;
+    
+    console.log("=== RAW OPENAI RESPONSE ===");
+    console.log(rawContent);
+    console.log("===========================");
 
-let raw = {};
-try {
-  raw = JSON.parse(data.choices[0].message.content);
-} catch (e) {
-  console.warn("Impossible de parser JSON, on va tenter de récupérer le texte brut.");
-  const text = data.choices[0].message.content;
-  // Extraction simple avec regex pour ne jamais avoir undefined
-  raw.title = (text.match(/"title":\s*"([^"]+)"/) || [])[1] || text.split("\n")[0] || "";
-  raw.intro = (text.match(/"intro":\s*"([^"]+)"/) || [])[1] || text.split("\n")[1] || "";
-  raw.hidden_plot = "";
-  raw.secret_objective = "";
-  raw.hazard = "";
-  raw.companion = null;
-}
+    let parsedScenario;
+    
+    try {
+      parsedScenario = JSON.parse(rawContent);
+    } catch (parseError) {
+      console.error("❌ Erreur de parsing JSON:", parseError);
+      console.log("Tentative d'extraction manuelle...");
+      
+      // Extraction de secours plus robuste
+      const cleanContent = rawContent.replace(/```json|```/g, '').trim();
+      
+      try {
+        parsedScenario = JSON.parse(cleanContent);
+      } catch (secondError) {
+        console.error("❌ Échec extraction JSON. Utilisation de valeurs par défaut.");
+        parsedScenario = {
+          title: quest.title || "Mystère de " + (quest.zoneName || "l'Inconnu"),
+          intro: "Les ténèbres s'épaississent. Une menace plane sur ces terres oubliées...",
+          hidden_plot: "Un secret ancien attend d'être découvert.",
+          secret_objective: "Découvrir la véritable nature de la menace",
+          hazard: `Présences hostiles de rang ${quest.rank} détectées dans la zone`,
+          companion: mode === 'team' ? { name: "Compagnon", role: "Allié", specialty: "Combat" } : null
+        };
+      }
+    }
 
-const scenario = {
-  title: raw.title || "Vision de l’Oracle",
-  intro: raw.intro || "Le destin se met en marche...",
-  hidden_plot: raw.hidden_plot || "",
-  secret_objective: raw.secret_objective || "",
-  hazard: raw.hazard || "Menace inconnue",
-  companion: raw.companion || null
-};
+    // Construction du scénario final avec valeurs de secours STRICTES
+    const scenario = {
+      title: parsedScenario.title || quest.title || "Quête Mystérieuse",
+      intro: parsedScenario.intro || "Le destin vous appelle vers l'inconnu...",
+      hidden_plot: parsedScenario.hidden_plot || "Un mystère se cache dans l'ombre.",
+      secret_objective: parsedScenario.secret_objective || "Accomplir l'objectif principal",
+      hazard: parsedScenario.hazard || `Menaces de rang ${quest.rank} présentes`,
+      companion: parsedScenario.companion || null
+    };
 
-console.log("SCENARIO READY TO SEND:", scenario);
-res.json(scenario);
-console.log("SCENARIO REÇU:", scenario);
+    console.log("✅ SCENARIO FINAL ENVOYÉ:", JSON.stringify(scenario, null, 2));
+    
+    res.json(scenario);
+    
   } catch (error) {
-    res.status(500).json({ error: "L'Oracle est sourd." });
+    console.error("❌ ERREUR SERVEUR:", error);
+    
+    // Scénario de secours en cas d'erreur totale
+    res.status(200).json({
+      title: quest.title || "Épreuve de l'Oracle",
+      intro: `Vous pénétrez dans ${quest.zoneName || 'une zone inconnue'}. L'air est chargé de magie ancienne...`,
+      hidden_plot: "Des forces obscures manipulent les événements.",
+      secret_objective: "Découvrir la vérité cachée",
+      hazard: `Adversaires de rang ${quest.rank} en patrouille`,
+      companion: mode === 'team' ? { name: "Gardien", role: "Protecteur", specialty: "Défense" } : null
+    });
   }
 });
 
