@@ -74,17 +74,33 @@ app.post("/quest/scenario", async (req, res) => {
       })
     });
     const data = await response.json();
-    const raw = JSON.parse(data.choices[0].message.content);
+console.log("RAW OPENAI RESPONSE:", data.choices[0].message.content);
+
+let raw = {};
+try {
+  raw = JSON.parse(data.choices[0].message.content);
+} catch (e) {
+  console.warn("Impossible de parser JSON, on va tenter de récupérer le texte brut.");
+  const text = data.choices[0].message.content;
+  // Extraction simple avec regex pour ne jamais avoir undefined
+  raw.title = (text.match(/"title":\s*"([^"]+)"/) || [])[1] || text.split("\n")[0] || "";
+  raw.intro = (text.match(/"intro":\s*"([^"]+)"/) || [])[1] || text.split("\n")[1] || "";
+  raw.hidden_plot = "";
+  raw.secret_objective = "";
+  raw.hazard = "";
+  raw.companion = null;
+}
 
 const scenario = {
-  title: raw.title || raw.name || "Épreuve Astrale",
-  intro: raw.intro || raw.description || "Le monde retient son souffle...",
+  title: raw.title || "Vision de l’Oracle",
+  intro: raw.intro || "Le destin se met en marche...",
   hidden_plot: raw.hidden_plot || "",
   secret_objective: raw.secret_objective || "",
   hazard: raw.hazard || "Menace inconnue",
   companion: raw.companion || null
 };
 
+console.log("SCENARIO READY TO SEND:", scenario);
 res.json(scenario);
 console.log("SCENARIO REÇU:", scenario);
   } catch (error) {
