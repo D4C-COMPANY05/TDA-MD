@@ -39,43 +39,33 @@ const formatFullPlayerContext = (player, currentStats = null) => {
 app.post("/quest/scenario", async (req, res) => {
   const { player, quest, mode } = req.body;
 
-  const systemPrompt = `
-    Tu es l'Environnement et le Maître du Jeu d'un RPG épique.
-    CONSIGNE DE RANG : Le joueur est rang ${player.rank} et la quête est rang ${quest.rank}. 
-    Si le rang du joueur est supérieur, il est écrasant de puissance. Adapte la difficulté en conséquence.
-    
-    IMPORTANT : Tu DOIS générer un objet JSON valide avec TOUS les champs requis.
-    Ne génère JAMAIS de texte avant ou après le JSON.
-    
-    Réponds UNIQUEMENT avec un objet JSON contenant :
-    - title (string) : Titre épique de la quête
-    - intro (string) : Description immersive du scénario de départ
-    - hidden_plot (string) : Le fil conducteur caché de l'aventure
-    - secret_objective (string) : Condition secrète pour bonus
-    - hazard (string) : Danger initial précis avec positions exactes
-    - companion (object ou null) : Compagnon si mode équipe
-  `;
+  const systemPrompt = `Tu es un générateur de scénarios RPG.
+Tu DOIS répondre UNIQUEMENT avec un objet JSON valide, sans texte avant ou après.
+Format EXACT requis :
+{
+  "title": "string",
+  "intro": "string",
+  "hidden_plot": "string",
+  "secret_objective": "string",
+  "hazard": "string",
+  "companion": null ou {"name": "string", "role": "string"}
+}`;
 
-  const userPrompt = `
-    CONTEXTE DU PERSONNAGE:
-    ${formatFullPlayerContext(player)}
-    
-    ZONE D'AVENTURE: ${quest.zoneName}
-    OBJECTIF PRINCIPAL: ${quest.task || quest.title}
-    MODE: ${mode === 'team' ? 'Équipe (avec compagnon)' : 'Solo'}
-    
-    Génère le scénario d'introduction avec TOUS les champs requis en JSON strict :
-    {
-      "title": "Un titre épique",
-      "intro": "Une description immersive captivante",
-      "hidden_plot": "Le véritable enjeu caché",
-      "secret_objective": "Condition secrète bonus",
-      "hazard": "Danger initial précis avec positions (ex: '3 golems de pierre à 20m au Nord, niveau ${quest.rank}')",
-      "companion": ${mode === 'team' ? '{"name": "Nom", "role": "Rôle", "specialty": "Spécialité"}' : 'null'}
-    }
-  `;
+  const userPrompt = `Joueur: ${player.avatarName}, Rang ${player.rank}, Classe ${player.characterClass}
+Zone: ${quest.zoneName}
+Objectif: ${quest.task || quest.title}
+Mode: ${mode}
+
+Crée un scénario immersif avec un titre accrocheur, une intro captivante de 2-3 phrases, un complot caché, un objectif secret, et un danger initial précis.
+${mode === 'team' ? 'Inclus un compagnon avec nom et rôle.' : 'Mets companion à null.'}
+
+Réponds UNIQUEMENT en JSON valide.`;
 
   try {
+    console.log("🔵 === APPEL OPENAI ===");
+    console.log("Prompt système:", systemPrompt);
+    console.log("Prompt utilisateur:", userPrompt);
+    
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: { 
@@ -89,72 +79,84 @@ app.post("/quest/scenario", async (req, res) => {
           { role: "user", content: userPrompt }
         ],
         response_format: { type: "json_object" },
-        temperature: 0.8
+        temperature: 0.7,
+        max_tokens: 800
       })
     });
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error("❌ ERREUR OPENAI:", response.status, errorText);
+      throw new Error(`OpenAI error: ${response.status}`);
     }
 
     const data = await response.json();
     const rawContent = data.choices[0].message.content;
     
-    console.log("=== RAW OPENAI RESPONSE ===");
+    console.log("🟢 === RÉPONSE BRUTE OPENAI ===");
     console.log(rawContent);
-    console.log("===========================");
+    console.log("=== TYPE:", typeof rawContent);
+    console.log("=== LONGUEUR:", rawContent.length);
+    console.log("================================");
 
-    let parsedScenario;
+    // Nettoyage strict
+    let cleanContent = rawContent.trim();
     
-    try {
-      parsedScenario = JSON.parse(rawContent);
-    } catch (parseError) {
-      console.error("❌ Erreur de parsing JSON:", parseError);
-      console.log("Tentative d'extraction manuelle...");
-      
-      // Extraction de secours plus robuste
-      const cleanContent = rawContent.replace(/```json|```/g, '').trim();
-      
-      try {
-        parsedScenario = JSON.parse(cleanContent);
-      } catch (secondError) {
-        console.error("❌ Échec extraction JSON. Utilisation de valeurs par défaut.");
-        parsedScenario = {
-          title: quest.title || "Mystère de " + (quest.zoneName || "l'Inconnu"),
-          intro: "Les ténèbres s'épaississent. Une menace plane sur ces terres oubliées...",
-          hidden_plot: "Un secret ancien attend d'être découvert.",
-          secret_objective: "Découvrir la véritable nature de la menace",
-          hazard: `Présences hostiles de rang ${quest.rank} détectées dans la zone`,
-          companion: mode === 'team' ? { name: "Compagnon", role: "Allié", specialty: "Combat" } : null
-        };
-      }
+    // Retirer les backticks markdown si présents
+    if (cleanContent.startsWith('```')) {
+      cleanContent = cleanContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      console.log("⚠️ Backticks détectés et retirés");
     }
 
-    // Construction du scénario final avec valeurs de secours STRICTES
+    console.log("🔧 === CONTENU NETTOYÉ ===");
+    console.log(cleanContent);
+    console.log("===========================");
+
+    // Parsing strict
+    let parsedScenario;
+    try {
+      parsedScenario = JSON.parse(cleanContent);
+      console.log("✅ JSON PARSÉ AVEC SUCCÈS:", parsedScenario);
+    } catch (parseError) {
+      console.error("❌ ERREUR DE PARSING:", parseError.message);
+      console.error("Position de l'erreur:", parseError);
+      throw new Error("JSON invalide reçu d'OpenAI");
+    }
+
+    // Validation stricte des champs
+    const requiredFields = ['title', 'intro', 'hidden_plot', 'secret_objective', 'hazard'];
+    const missingFields = requiredFields.filter(field => !parsedScenario[field]);
+    
+    if (missingFields.length > 0) {
+      console.error("❌ CHAMPS MANQUANTS:", missingFields);
+      throw new Error(`Champs manquants: ${missingFields.join(', ')}`);
+    }
+
+    // Construction du scénario final
     const scenario = {
-      title: parsedScenario.title || quest.title || "Quête Mystérieuse",
-      intro: parsedScenario.intro || "Le destin vous appelle vers l'inconnu...",
-      hidden_plot: parsedScenario.hidden_plot || "Un mystère se cache dans l'ombre.",
-      secret_objective: parsedScenario.secret_objective || "Accomplir l'objectif principal",
-      hazard: parsedScenario.hazard || `Menaces de rang ${quest.rank} présentes`,
+      title: parsedScenario.title,
+      intro: parsedScenario.intro,
+      hidden_plot: parsedScenario.hidden_plot,
+      secret_objective: parsedScenario.secret_objective,
+      hazard: parsedScenario.hazard,
       companion: parsedScenario.companion || null
     };
 
-    console.log("✅ SCENARIO FINAL ENVOYÉ:", JSON.stringify(scenario, null, 2));
+    console.log("✅ === SCENARIO FINAL ENVOYÉ ===");
+    console.log(JSON.stringify(scenario, null, 2));
+    console.log("=================================");
     
     res.json(scenario);
     
   } catch (error) {
-    console.error("❌ ERREUR SERVEUR:", error);
+    console.error("❌❌❌ ERREUR CRITIQUE ❌❌❌");
+    console.error(error);
     
-    // Scénario de secours en cas d'erreur totale
-    res.status(200).json({
-      title: quest.title || "Épreuve de l'Oracle",
-      intro: `Vous pénétrez dans ${quest.zoneName || 'une zone inconnue'}. L'air est chargé de magie ancienne...`,
-      hidden_plot: "Des forces obscures manipulent les événements.",
-      secret_objective: "Découvrir la vérité cachée",
-      hazard: `Adversaires de rang ${quest.rank} en patrouille`,
-      companion: mode === 'team' ? { name: "Gardien", role: "Protecteur", specialty: "Défense" } : null
+    // Renvoyer l'erreur au client pour qu'il sache ce qui s'est passé
+    res.status(500).json({ 
+      error: "Échec de génération du scénario",
+      details: error.message,
+      suggestion: "Vérifiez les logs serveur pour plus de détails"
     });
   }
 });
