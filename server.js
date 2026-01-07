@@ -86,6 +86,7 @@ const scenario = {
 };
 
 res.json(scenario);
+console.log("SCENARIO REÇU:", scenario);
   } catch (error) {
     res.status(500).json({ error: "L'Oracle est sourd." });
   }
