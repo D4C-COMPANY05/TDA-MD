@@ -90,7 +90,7 @@ res.json(scenario);
     res.status(500).json({ error: "L'Oracle est sourd." });
   }
 });
-a
+
 app.post("/quest/progress", async (req, res) => {
   const { player, quest, action } = req.body;
 
