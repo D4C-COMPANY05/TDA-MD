@@ -74,12 +74,23 @@ app.post("/quest/scenario", async (req, res) => {
       })
     });
     const data = await response.json();
-    res.json(JSON.parse(data.choices[0].message.content));
+    const raw = JSON.parse(data.choices[0].message.content);
+
+const scenario = {
+  title: raw.title || raw.name || "Épreuve Astrale",
+  intro: raw.intro || raw.description || "Le monde retient son souffle...",
+  hidden_plot: raw.hidden_plot || "",
+  secret_objective: raw.secret_objective || "",
+  hazard: raw.hazard || "Menace inconnue",
+  companion: raw.companion || null
+};
+
+res.json(scenario);
   } catch (error) {
     res.status(500).json({ error: "L'Oracle est sourd." });
   }
 });
-
+a
 app.post("/quest/progress", async (req, res) => {
   const { player, quest, action } = req.body;
 
