@@ -36,49 +36,83 @@ const formatFullPlayerContext = (player, currentStats = null) => {
   `;  
 };  
   
-app.post("/quest/scenario", async (req, res) => {  
-  const { player, quest, mode } = req.body;  
+app.post("/quest/scenario", async (req, res) => {
+  const { player, quest, mode } = req.body;
   
-  const systemPrompt = `  
-    Tu es l'Environnement et le Maître du Jeu.  
-    CONSIGNE DE RANG : Le joueur est rang ${player.rank} et la quête est rang ${quest.rank}.   
-    Si le rang du joueur est supérieur, il est écrasant de puissance.  
-    Génère un "secret_objective" (scénario caché).  
-    Réponds en JSON uniquement.  
-  `;  
+  console.log("=== NOUVELLE REQUÊTE SCENARIO ===");
+  console.log("Player:", player?.avatarName, "Rank:", player?.rank);
+  console.log("Quest:", quest?.title, "Zone:", quest?.zoneName);
   
-  const userPrompt = `  
-    CONTEXTE: ${formatFullPlayerContext(player)}  
-    ZONE: ${quest.zoneName}  
-    OBJECTIF: ${quest.task || quest.title}  
-      
-    Génère l'intro:  
-    {  
-      "title": "Nom",  
-      "intro": "Description",  
-      "hidden_plot": "Le fil conducteur",  
-      "secret_objective": "Condition cachée",  
-      "hazard": "Danger initial précis (ex: '3 golems à 20m au Nord')",  
-      "companion": ${mode === 'team' ? '{"name": "Kael", "role": "Guerrier"}' : 'null'}  
-    }  
-  `;  
+  const systemPrompt = `
+    Tu es l'Environnement et le Maître du Jeu.
+    CONSIGNE DE RANG : Le joueur est rang ${player.rank} et la quête est rang ${quest.rank}.  
+    Si le rang du joueur est supérieur, il est écrasant de puissance.
+    Génère un "secret_objective" (scénario caché).
+    Réponds en JSON uniquement.
+  `;
   
-  try {  
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {  
-      method: "POST",  
-      headers: { "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, "Content-Type": "application/json" },  
-      body: JSON.stringify({  
-        model: "gpt-4o-mini",  
-        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],  
-        response_format: { type: "json_object" }  
-      })  
-    });  
-    const data = await response.json();  
-    res.json(JSON.parse(data.choices[0].message.content));  
-  } catch (error) {  
-    res.status(500).json({ error: "L'Oracle est sourd." });  
-  }  
-});  
+  const userPrompt = `
+    CONTEXTE: ${formatFullPlayerContext(player)}
+    ZONE: ${quest.zoneName}
+    OBJECTIF: ${quest.task || quest.title}
+    
+    Génère l'intro:
+    {
+      "title": "Nom",
+      "intro": "Description",
+      "hidden_plot": "Le fil conducteur",
+      "secret_objective": "Condition cachée",
+      "hazard": "Danger initial précis (ex: '3 golems à 20m au Nord')",
+      "companion": ${mode === 'team' ? '{"name": "Kael", "role": "Guerrier"}' : 'null'}
+    }
+  `;
+  
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { 
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`, 
+        "Content-Type": "application/json" 
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt }, 
+          { role: "user", content: userPrompt }
+        ],
+        response_format: { type: "json_object" }
+      })
+    });
+    
+    const data = await response.json();
+    
+    // ===== LOGGING DÉTAILLÉ =====
+    console.log("Status OpenAI:", response.status);
+    console.log("Réponse OpenAI:", JSON.stringify(data, null, 2));
+    
+    if (!response.ok) {
+      console.error("❌ ERREUR OpenAI:", data);
+      return res.status(500).json({ 
+        error: "Erreur OpenAI", 
+        details: data.error?.message || "Inconnue",
+        fullError: data 
+      });
+    }
+    
+    const parsedContent = JSON.parse(data.choices[0].message.content);
+    console.log("✅ Scénario généré:", parsedContent.title);
+    
+    res.json(parsedContent);
+  } catch (error) {
+    console.error("❌ ERREUR CATCH:", error.message);
+    console.error("Stack:", error.stack);
+    res.status(500).json({ 
+      error: "L'Oracle est sourd.", 
+      details: error.message,
+      stack: error.stack 
+    });
+  }
+});
   
 app.post("/quest/progress", async (req, res) => {  
   const { player, quest, action } = req.body;  
