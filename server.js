@@ -14,7 +14,6 @@ const OPENAI_KEYS = [
   process.env.OPENAI_KEY_3,
 ];
 
-// Fonction pour prendre une clé au hasard (ou round-robin)
 let keyIndex = 0;
 const getOpenAIKey = () => {
   const key = OPENAI_KEYS[keyIndex];
@@ -22,26 +21,23 @@ const getOpenAIKey = () => {
   return key;
 };
 
-// ===== FORMAT PLAYER POUR L'IA =====
 const formatPlayerContext = (player, currentStats = null) => {
   const b = player.baseStats || {};
   const m = player.modifiers || {};
   const s = currentStats || b;
 
   return `
---- PROFIL DU PERSONNAGE ---
 NOM: ${player.avatarName} | CLASSE: ${player.characterClass} | RANG: ${player.rank} | LVL: ${player.level}
 ATTRIBUTS: ${player.attributes?.join(", ") || "Aucun"}
 
 UNITÉS VITALES:
 HP: ${Math.ceil(s.hp)}/${s.hpMax || b.hp} | MP: ${Math.ceil(s.mp_ps || s.mp)}/${s.mpMax || b.mp_ps} | END: ${Math.ceil(s.endurance || s.end)}/${s.endMax || b.endurance}
 
-STATISTIQUES DE COMBAT:
+STATS COMBAT:
 PA: ${s.pa || (b.pa + (m.pa||0))} | PF: ${s.pf || (b.pf + (m.pf||0))} | Maîtrise: ${s.mastery || (b.mastery + (m.mastery||0))}
 Vitesse: ${s.speed || (b.speed + (m.speed||0))} | Précision: ${s.precision || (b.precision + (m.precision||0))}
-Volonté: ${s.willpower || (b.willpower + (m.willpower||0))} | Concentration: ${s.concentration || (b.concentration + (m.concentration||0))} | Chance: ${s.luck || (b.luck + (m.luck||0))}
 
-COMPÉTENCES (description RP libre):
+COMPÉTENCES:
 ${player.uniqueSkills?.map(sk => `- ${sk.name}: ${sk.description}`).join("\n") || "Aucune"}
   `;
 };
@@ -50,43 +46,48 @@ ${player.uniqueSkills?.map(sk => `- ${sk.name}: ${sk.description}`).join("\n") |
 app.post("/quest/scenario", async (req, res) => {
   const { player, quest, mode } = req.body;
 
-  const systemPrompt = `
-Tu es un Maître du Jeu expérimenté. Ton style est naturel, immersif, sans être fleuri.
-Tu décris ce que le personnage VOIT, ENTEND, RESSENT - pas ce qu'il pense.
-Tu transformes les compétences RP en règles techniques (coûts, limites, scaling).
-Réponds uniquement en JSON valide.
-`;
+  const systemPrompt = `Tu es un Maître du Jeu expérimenté qui raconte des histoires immersives.
+
+STYLE D'ÉCRITURE:
+- Écris comme un narrateur humain, pas comme une IA
+- Utilise des phrases courtes et percutantes
+- Évite les formulations robotiques ("il semblerait que", "vous pourriez", etc.)
+- Sois direct et concret
+- Utilise le présent de narration pour l'immersion
+
+EXEMPLE BON:
+"Tu te tiens à l'orée de la Forêt Maudite. Le brouillard rampe entre les arbres tordus. Trois silhouettes se dessinent à une vingtaine de mètres - des kobolds de sang, reconnaissables à leurs crocs dégouttants. Ils ne t'ont pas encore repéré."
+
+EXEMPLE MAUVAIS:
+"Vous vous trouvez maintenant devant ce qui semble être une forêt inquiétante. Il semblerait que des créatures hostiles soient présentes dans les environs. Vous pourriez probablement les affronter si vous le souhaitez."
+
+Transforme les compétences RP du joueur en compétences structurées avec limites claires. Réponds UNIQUEMENT en JSON valide.`;
 
   const userPrompt = `
-JOUEUR: ${player.avatarName} (${player.characterClass}, Rang ${player.rank})
-COMPÉTENCES RP:
-${player.uniqueSkills?.map(sk => `- ${sk.name}: ${sk.description}`).join("\n") || "Aucune"}
-
+CONTEXTE: ${formatPlayerContext(player)}
 ZONE: ${quest.zoneName}
 OBJECTIF: ${quest.task || quest.title}
-MODE: ${mode === 'team' ? 'En équipe avec Kael (Guerrier)' : 'Solo'}
+COMPAGNON: ${mode === 'team' ? 'Kael (Guerrier)' : 'Aucun'}
 
-Génère l'introduction de la quête en JSON:
+GÉNÈRE:
 {
-  "title": "Titre court et percutant",
-  "intro": "2-3 phrases décrivant ce que le personnage voit/entend en arrivant. Ton neutre de MJ.",
-  "hidden_plot": "Le fil narratif caché (1 phrase)",
-  "secret_objective": "Condition secrète de succès parfait",
-  "hazard": "Situation initiale précise (ex: '3 golems de pierre patrouillent à 30m, dos tourné')",
+  "title": "Titre court et percutant (3-5 mots max)",
+  "intro": "Description immersive en 2-3 phrases courtes. Décris ce que le personnage VOIT, ENTEND, SENT. Sois concret et précis sur les distances et positions des ennemis si présents. Utilise le présent.",
+  "hidden_plot": "Le fil rouge caché du scénario",
+  "secret_objective": "Une condition spéciale et mesurable (ex: 'Sauver les otages', 'Ne pas être détecté', 'Finir en moins de 5 minutes')",
+  "hazard": "Danger PRÉCIS avec position et distance (ex: '3 kobolds à 18m au sud, 1 golem à 40m à l'est')",
   "skills": [
     {
-      "name": "Nom exact de la compétence",
+      "name": "Nom exact de la compétence du joueur",
       "type": "attaque/défense/soutien/utilitaire",
-      "portee": "mêlée/courte (0-10m)/moyenne (10-30m)/longue (30m+)",
-      "cout": { "mp": nombre, "end": nombre },
-      "effet": "Effet mécanique concret (dégâts, durée, zone...)",
-      "limites": ["Contraintes réelles basées sur la description RP"],
-      "scaling": { "stat principale": "coefficient (ex: 1.5x PF)" }
+      "portee": "corps-à-corps/10m/30m/50m/100m",
+      "cout": { "mp": X, "end": Y },
+      "effet": "Effet concret en 1 phrase",
+      "limites": ["limite 1", "limite 2"],
+      "scaling": { "stat principale": coefficient }
     }
   ]
 }
-
-IMPORTANT: L'intro décrit UNIQUEMENT ce qui est visible/audible, pas les pensées du personnage.
 `;
 
   try {
@@ -103,7 +104,7 @@ IMPORTANT: L'intro décrit UNIQUEMENT ce qui est visible/audible, pas les pensé
           { role: "user", content: userPrompt }
         ],
         response_format: { type: "json_object" },
-        temperature: 0.7 // Un peu de variété tout en restant cohérent
+        temperature: 0.8 // Plus créatif et naturel
       })
     });
 
@@ -123,7 +124,7 @@ IMPORTANT: L'intro décrit UNIQUEMENT ce qui est visible/audible, pas les pensé
     res.json(parsedContent);
 
   } catch (error) {
-    console.error("❌ ERREUR:", error.message);
+    console.error("❌ Erreur scénario:", error.message);
     res.status(500).json({ error: "Erreur scénario", details: error.message });
   }
 });
@@ -134,78 +135,58 @@ app.post("/quest/progress", async (req, res) => {
 
   let skillsToSend = [];
   if(action) {
-    skillsToSend = quest.skills?.filter(sk => 
-      action.toLowerCase().includes(sk.name.toLowerCase())
-    ) || [];
+    skillsToSend = quest.skills?.filter(sk => action.toLowerCase().includes(sk.name.toLowerCase())) || [];
   }
 
-  const systemPrompt = `
-Tu es l'ENVIRONNEMENT et le système de jeu. Tu décris les CONSÉQUENCES des actions, pas les intentions.
+  const systemPrompt = `Tu es un Maître du Jeu qui narre les conséquences des actions du joueur.
 
-RÈGLES STRICTES:
-1. Décris UNIQUEMENT ce qui est perceptible (vue, ouïe, toucher, odeur)
-2. Ne décris JAMAIS les pensées ou sensations internes du joueur
-3. Donne des résultats CONCRETS et MESURABLES
-4. Si le joueur utilise une compétence de détection, décris ce qu'il découvre
-5. Calcule les dégâts/effets selon les stats et compétences
-6. Vérifie les limites des compétences avant d'accepter l'action
+RÈGLES ABSOLUES:
+1. DÉCRIS LES RÉSULTATS CONCRETS des actions, pas les intentions
+2. DONNE DES DISTANCES ET POSITIONS PRÉCISES pour tout ce qui est visible
+3. ÉCRIS AU PRÉSENT, comme si ça se déroulait maintenant
+4. SOIS DIRECT: pas de "tu pourrais", "il semblerait", juste ce qui SE PASSE
+5. Si le joueur attaque → Décris l'impact, les dégâts, la réaction de la cible
+6. Si le joueur se déplace → Décris SA NOUVELLE POSITION et ce qu'il VOIT DE LÀ
+7. Si le joueur utilise une compétence → Décris l'effet VISUEL et le résultat MÉCANIQUE
 
 CALCULS:
-- Esquive/Réaction: PA + Vitesse
-- Dégâts physiques: PF × scaling de la compétence
-- Dégâts magiques: Mastery × scaling
-- Coûts: Déduis MP/END selon la compétence utilisée
+- Esquive réussie si: (PA + Vitesse du joueur) > (Vitesse ennemie × 1.2)
+- Dégâts = PF × scaling de la compétence × (Maîtrise/100)
+- Coût en MP/END selon la compétence utilisée
+- Un rang S domine complètement un rang C ou inférieur
 
-TON: Neutre, factuel, comme un MJ qui décrit l'environnement.
-`;
+STYLE:
+❌ MAUVAIS: "Tu tentes de frapper le kobold. Il semble être blessé. Tu pourrais peut-être continuer."
+✅ BON: "Ton poing s'écrase sur le crâne du kobold. CRAC. Il s'effondre, mort. Les deux autres à 12m grognent et chargent vers toi."
+
+❌ MAUVAIS: "Tu avances vers le nord. Il y a des ennemis quelque part."
+✅ BON: "Tu avances de 15m vers le nord. Devant toi, à 8m: un golem de pierre, immobile. À ta gauche (20m): deux kobolds qui fouillent des cadavres."`;
 
   const userPrompt = `
-=== CHRONIQUE PRÉCÉDENTE ===
-${chronique || "Début de l'aventure"}
+CHRONIQUE PRÉCÉDENTE:
+${chronique || "Début de la quête"}
 
-=== ÉTAT ACTUEL ===
-${formatPlayerContext(player, quest.stats)}
+JOUEUR: ${formatPlayerContext(player, quest.stats)}
 OBJECTIF: ${quest.task}
-OBJECTIF SECRET: ${quest.secret_objective}
-SITUATION: ${quest.hazard}
+SECRET À DÉCOUVRIR: ${quest.secret_objective}
+ÉTAT ACTUEL: ${quest.hazard}
 
-=== ACTION DU JOUEUR ===
-"${action}"
+ACTION DU JOUEUR: "${action}"
+COMPÉTENCE(S) UTILISÉE(S): ${skillsToSend.length > 0 ? JSON.stringify(skillsToSend) : "Aucune (action simple)"}
 
-${skillsToSend.length > 0 ? `
-=== COMPÉTENCE(S) UTILISÉE(S) ===
-${skillsToSend.map(sk => `
-- ${sk.name} (${sk.type}, ${sk.portee})
-  Coût: ${sk.cout.mp || 0} MP, ${sk.cout.end || 0} END
-  Effet: ${sk.effet}
-  Limites: ${sk.limites.join(', ')}
-  Scaling: ${JSON.stringify(sk.scaling)}
-`).join('\n')}
-` : ''}
-
-Réponds en JSON:
+RÉPONDS EN JSON:
 {
-  "aiResponse": "Décris CE QUI SE PASSE concrètement (pas ce que le joueur ressent). Ton MJ neutre. 2-4 phrases max.",
+  "aiResponse": "Narration au présent, 2-4 phrases max. Décris le RÉSULTAT de l'action avec distances précises. Si combat: donne les dégâts exacts. Si déplacement: donne la nouvelle position et ce qui est visible.",
   "newStats": { 
-    "hp": ${quest.stats.hp},
-    "mp_ps": ${quest.stats.mp_ps},
-    "endurance": ${quest.stats.endurance}
+    "hp": nombre exact après l'action, 
+    "mp_ps": nombre exact après coût, 
+    "endurance": nombre exact après coût 
   },
-  "newProgress": ${quest.progress || 0},
-  "newHazard": "Nouvelle situation précise de l'environnement",
-  "secretFound": ${quest.secretFound || false},
-  "isDead": false
+  "newProgress": nombre entre 0 et 100 (augmente seulement si objectif avance),
+  "newHazard": "État ACTUEL avec positions précises (ex: '1 kobold mort, 2 autres à 12m qui chargent, golem à 40m immobile')",
+  "secretFound": true si condition secrète remplie, sinon false,
+  "isDead": true si HP ≤ 0 ou MP ≤ 0
 }
-
-EXEMPLES DE BON TON:
-✅ "La boule de feu explose sur le golem. Sa carapace se fissure, révélant un noyau lumineux. Il pivote vers vous en grognant."
-✅ "Vous esquivez le coup. La massue fracasse le sol à 30cm de vous, projetant des débris."
-✅ "Votre sort de détection révèle 5 signatures magiques derrière le mur nord, à 15m."
-
-EXEMPLES DE MAUVAIS TON:
-❌ "Vous sentez l'adrénaline monter alors que vous esquivez avec grâce..."
-❌ "Un frisson parcourt votre échine en découvrant..."
-❌ "Vous vous demandez si cette action était sage..."
 `;
 
   try {
@@ -222,33 +203,31 @@ EXEMPLES DE MAUVAIS TON:
           { role: "user", content: userPrompt }
         ],
         response_format: { type: "json_object" },
-        temperature: 0.6 // Légèrement plus déterministe pour la cohérence
+        temperature: 0.7
       })
     });
 
     const data = await response.json();
-
+    
     if (!response.ok) {
       console.error("❌ ERREUR OpenAI:", data);
       return res.status(500).json({ 
-        aiResponse: "L'environnement ne répond pas.", 
+        aiResponse: "L'Oracle est troublé...", 
         details: data.error?.message 
       });
     }
 
     const result = JSON.parse(data.choices[0].message.content);
 
-    // Forcer la conservation des max stats
+    // Sécurité: garde les max stats
     result.newStats.hpMax = quest.stats.hpMax;
     result.newStats.mpMax = quest.stats.mpMax;
     result.newStats.endMax = quest.stats.endMax;
 
-    console.log("✅ Action traitée, progression:", result.newProgress);
-
     res.json(result);
 
   } catch (error) {
-    console.error("❌ ERREUR:", error.message);
+    console.error("❌ Erreur progress:", error.message);
     res.status(500).json({ 
       aiResponse: "Le destin vacille.", 
       details: error.message 
@@ -260,29 +239,30 @@ EXEMPLES DE MAUVAIS TON:
 app.post("/quest/resolve", async (req, res) => {
   const { player, quest } = req.body;
 
-  const systemPrompt = `
-Tu es le juge final d'une quête. Ton verdict est sobre et factuel.
-Pas de dramatisation excessive, juste les faits.
-`;
+  const systemPrompt = `Tu es un Maître du Jeu qui conclut une aventure.
+
+STYLE: Écris une conclusion immersive en 2-3 phrases. Pas de langue de bois, sois direct.
+
+❌ MAUVAIS: "Votre quête s'est avérée être un succès remarquable grâce à vos efforts."
+✅ BON: "Tu ressors de la forêt, couvert de sang et de gloire. Les villageois t'acclament. Tu es un héros."`;
 
   const userPrompt = `
-QUÊTE: ${quest.title}
-PROGRESSION: ${quest.progress}%
-OBJECTIF SECRET: ${quest.secretFound ? "Accompli" : "Non découvert"}
+FIN DE QUÊTE: ${quest.title}
+Progression: ${quest.progress}%
+Secret trouvé: ${quest.secretFound ? "OUI" : "NON"}
+État final: ${quest.hazard}
 
-Conclusion en JSON:
+Détermine si c'est un succès (progress = 100% obligatoire).
+
+RÉPONDS EN JSON:
 {
-  "success": ${quest.progress >= 70 ? 'true' : 'false'},
-  "reason": "2-3 phrases sobres expliquant pourquoi c'est un succès/échec. Ton de compte-rendu militaire.",
+  "success": true/false,
+  "reason": "Conclusion narrative en 2-3 phrases max, style direct",
   "rewards": { 
     "gold": ${quest.secretFound ? quest.reward_gold * 3 : quest.reward_gold}, 
     "exp": ${Math.floor(quest.progress * 3)} 
   }
 }
-
-EXEMPLES:
-✅ "Objectif rempli. Les golems sont neutralisés et l'artefact récupéré. Mission terminée sans pertes."
-✅ "Échec partiel. Le noyau a été détruit mais deux golems se sont échappés. Zone non sécurisée."
 `;
 
   try {
@@ -299,7 +279,7 @@ EXEMPLES:
           { role: "user", content: userPrompt }
         ],
         response_format: { type: "json_object" },
-        temperature: 0.5
+        temperature: 0.8
       })
     });
 
@@ -308,21 +288,21 @@ EXEMPLES:
     if (!response.ok) {
       return res.status(500).json({ 
         success: false, 
-        reason: "Erreur d'évaluation.", 
-        details: data.error?.message 
+        reason: "L'Oracle est silencieux." 
       });
     }
 
     res.json(JSON.parse(data.choices[0].message.content));
 
   } catch (error) {
+    console.error("❌ Erreur resolve:", error.message);
     res.status(500).json({ 
       success: false, 
-      reason: "Erreur finale.", 
+      reason: "L'incursion s'achève dans le chaos.", 
       details: error.message 
     });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Oracle V4 - Mémoire et Chronique Active`));
+app.listen(PORT, () => console.log(`🔮 Oracle V4 - MJ Immersif Actif`));
