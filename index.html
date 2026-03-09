@@ -1,643 +1,205 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Shika-Md-session</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyseur de Documents IA</title>
+    <style>
+        * {{ box-sizing: border-box; }}
+        body {{
+            font-family: Arial, sans-serif;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }}
+        h2 {{
+            text-align: center;
+            color: #e94560;
+        }}
+        .zone-upload {{
+            background: #16213e;
+            border: 2px dashed #e94560;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            margin-bottom: 20px;
+        }}
+        .statut {{
+            background: #0f3460;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }}
+        .statut.visible {{ display: block; }}
+        #boite-chat {{
+            background: #16213e;
+            height: 350px;
+            overflow-y: auto;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }}
+        .message-user {{
+            text-align: right;
+            margin: 8px 0;
+        }}
+        .message-user span {{
+            background: #e94560;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 15px;
+            display: inline-block;
+            max-width: 80%;
+        }}
+        .message-ia {{
+            text-align: left;
+            margin: 8px 0;
+        }}
+        .message-ia span {{
+            background: #0f3460;
+            color: #eee;
+            padding: 8px 12px;
+            border-radius: 15px;
+            display: inline-block;
+            max-width: 80%;
+        }}
+        #zone-input {{
+            display: flex;
+            gap: 10px;
+        }}
+        #input-question {{
+            flex: 1;
+            padding: 10px;
+            border-radius: 20px;
+            border: none;
+            background: #16213e;
+            color: white;
+            font-size: 16px;
+        }}
+        button {{
+            padding: 10px 20px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }}
+        input[type="file"] {{ display: none; }}
+        label.btn-upload {{
+            display: inline-block;
+            padding: 10px 25px;
+            background: #e94560;
+            color: white;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 16px;
+        }}
+    </style>
 </head>
-<style>
-  :root {
-    --primary: #7c4dff;
-    --primary-dark: #651fff;
-    --dark: #121212;
-    --darker: #0a0a0a;
-    --light: #e0e0e0;
-    --gray: #757575;
-    --success: #00e676;
-    --danger: #ff5252;
-  }
-
-  * { box-sizing: border-box; margin:0; padding:0; }
-
-  body {
-    background: linear-gradient(135deg,#1a1a2e,#16213e);
-    color:var(--light);
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    min-height:100vh;
-    font-family:'Inter', system-ui, -apple-system, sans-serif;
-    line-height:1.6;
-    -webkit-font-smoothing:antialiased;
-  }
-
-  .container {
-    background: rgba(20,20,20,0.8);
-    backdrop-filter: blur(10px);
-    border-radius:16px;
-    padding:2.5rem;
-    box-shadow:0 8px 32px rgba(0,0,0,0.3);
-    border:1px solid rgba(255,255,255,0.08);
-    text-align:center;
-    width:100%;
-    max-width:420px;
-    margin:1rem;
-  }
-
-  h1 { color:var(--light); margin-bottom:2rem; font-weight:600; font-size:1.8rem; letter-spacing:0.5px; }
-
-  .session-control { display:flex; align-items:center; justify-content:center; margin-bottom:1.5rem; gap:0.5rem; }
-  .custom-session-input, .pairing-request-input, .pairing-complete-input { transition:all 0.35s ease; opacity:0; max-height:0; overflow:hidden; margin-bottom:1.5rem; }
-  .custom-session-input.active, .pairing-request-input.active, .pairing-complete-input.active { opacity:1; max-height:420px; }
-
-  input[type="text"], input[type="tel"] {
-    background: rgba(30,30,30,0.8); border:1px solid rgba(255,255,255,0.1);
-    color:var(--light); padding:0.9rem 1.2rem; border-radius:10px; width:100%; font-size:1rem; margin-top:0.5rem;
-    transition: all 0.2s ease;
-  }
-  input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 4px rgba(124,77,255,0.06); }
-
-  .checkbox-container { display:flex; align-items:center; cursor:pointer; user-select:none; }
-  .checkbox-container input { margin-right:0.5rem; accent-color:var(--primary); }
-
-  .buttons { display:flex; gap:1rem; justify-content:center; margin-bottom:2rem; flex-wrap:wrap; }
-  .btn {
-    background:var(--primary); color:white; border:none; padding:0.9rem 1.8rem; border-radius:10px;
-    font-size:1rem; cursor:pointer; transition:all 0.2s ease; font-weight:500; box-shadow:0 4px 6px rgba(0,0,0,0.1);
-    display:flex; align-items:center; gap:0.5rem; flex:1; min-width:120px; justify-content:center;
-  }
-  .btn:hover { background:var(--primary-dark); transform:translateY(-2px); }
-  .btn-reset { background:var(--danger); }
-  .btn-reset:hover { background:#ff1744; }
-
-  .display-area {
-    background: linear-gradient(135deg,var(--darker),var(--dark));
-    border-radius:14px; padding:2rem; min-height:250px; display:flex; flex-direction:column; justify-content:center; align-items:center;
-    border:1px solid rgba(255,255,255,0.05); margin-bottom:1.5rem; position:relative; overflow:hidden;
-  }
-  .display-area::before { content:''; position:absolute; top:-50%; left:-50%; width:200%; height:200%; background:radial-gradient(circle, rgba(124,77,255,0.06) 0%, transparent 70%); z-index:0; }
-
-  #qrcode { max-width:100%; height:auto; border-radius:8px; border:12px solid white; box-shadow:0 4px 20px rgba(0,0,0,0.2);
-    display:none; position:relative; z-index:1; transition: all 0.35s ease; opacity:0;
-  }
-  #qrcode.show { display:block; opacity:1; transform:scale(1); }
-
-  .session-id {
-    font-family:'Fira Code', monospace; background:rgba(0,0,0,0.3); padding:0.8rem 1.2rem; border-radius:8px;
-    display:none; align-items:center; gap:0.8rem; margin-top:1rem; position:relative; z-index:1; border:1px solid rgba(124,77,255,0.12);
-    font-size: 0.85rem;
-  }
-  .session-id.active { display:flex; }
-
-  .copy-btn { background:none; border:none; color:var(--gray); cursor:pointer; transition:color .2s; padding:0.3rem; border-radius:4px; }
-  .copy-btn:hover { color:var(--light); background:rgba(255,255,255,0.03); }
-  .copy-btn.copied { color:var(--success); }
-
-  #pairingCode { font-family:'Fira Code', monospace; font-size:1.4rem; letter-spacing:2px; background:linear-gradient(135deg,var(--darker),var(--dark));
-    padding:1rem 1.4rem; border-radius:10px; display:none; font-weight:bold; color:#fff; border:1px solid rgba(124,77,255,0.12);
-    box-shadow:0 4px 15px rgba(0,0,0,0.2); transition:all 0.35s ease; opacity:0; position:relative; z-index:1; margin-top:1rem;
-  }
-  #pairingCode.show { display:block; opacity:1; transform:translateY(0); }
-
-  .status { margin-top:1rem; font-size:0.95rem; color:var(--gray); position:relative; z-index:1; max-width:100%; text-align:center; }
-
-  .loading { display:none; flex-direction:column; align-items:center; position:relative; z-index:1; }
-  .spinner { width:40px; height:40px; border:3px solid rgba(124,77,255,0.12); border-top-color:var(--primary); border-radius:50%; animation:spin 1s linear infinite; margin-bottom:1rem; }
-
-  .input-valid { border-color:var(--success) !important; box-shadow:0 0 0 4px rgba(0,230,118,0.06) !important; }
-  .input-invalid { border-color:var(--danger) !important; box-shadow:0 0 0 4px rgba(255,82,82,0.06) !important; }
-
-  .btn:disabled { background:var(--gray) !important; cursor:not-allowed; transform:none !important; opacity:0.8; }
-
-  .session-validation { display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; font-size:0.85rem; height:20px; }
-  .session-validation .mini-spinner { width:16px; height:16px; border:2px solid rgba(255,255,255,0.12); border-top-color:var(--primary); border-radius:50%; animation:spin 1s linear infinite; display:none; }
-  .session-validation .validation-message { flex:1; }
-  .validation-success { color:var(--success); }
-  .validation-error { color:var(--danger); }
-
-  @keyframes spin { 0%{ transform:rotate(0deg);} 100%{ transform:rotate(360deg);} }
-
-  @media (max-width:480px) {
-    .container { padding:1.5rem; }
-    .buttons { flex-direction:column; }
-    .btn { width:100%; }
-    #pairingCode { font-size:1.1rem; padding:0.8rem 1rem; letter-spacing:1px; }
-    #qrcode { border-width:8px; }
-  }
-</style>
-
 <body>
-  <div class="container" role="main" aria-live="polite">
-    <h1>Shika-MD Login</h1>
+    <h2>📄 Analyseur de Documents IA</h2>
 
-    <div class="session-control">
-      <label class="checkbox-container">
-        <input type="checkbox" id="useCustomSession" aria-label="Use a custom session">
-        <span>Use a custom session ID</span>
-      </label>
+    <div class="zone-upload">
+        <p>Uploade un fichier PDF ou TXT</p>
+        <label class="btn-upload" for="fichier-input">
+            Choisir un fichier
+        </label>
+        <input type="file" id="fichier-input"
+            accept=".pdf,.txt"
+            onchange="uploadFichier()">
     </div>
 
-    <div class="custom-session-input" id="customSessionInput">
-      <input type="text" id="sessionId" placeholder="Enter session ID" aria-label="Session ID">
-      <div class="session-validation">
-        <div class="mini-spinner"></div>
-        <div class="validation-message"></div>
-      </div>
+    <div class="statut" id="statut"></div>
+
+    <div id="boite-chat">
+        <div class="message-ia">
+            <span>Charge un document pour commencer à poser des questions.</span>
+        </div>
     </div>
 
-    <!-- NOUVELLE ZONE: DEMANDE DE CODE DE JUMELAGE (N° de téléphone) -->
-    <div class="pairing-request-input" id="pairingRequestInput">
-      <p class="text-sm mb-2 text-gray-400">Pour obtenir un code : entrez le numéro de téléphone de votre bot.</p>
-      <input type="tel" id="phoneNumber" placeholder="Ex: 50933xxxxxx (chiffres seulement)" aria-label="Phone number">
-      <button class="btn" id="requestPairingCode" style="margin-top:0.8rem; width:100%;">
-        <i class="fas fa-arrow-right"></i> Générer le code interne
-      </button>
+    <div id="zone-input">
+        <input type="text" id="input-question"
+            placeholder="Pose une question sur ton document...">
+        <button onclick="poserQuestion()">Envoyer</button>
     </div>
 
-    <!-- NOUVELLE ZONE: ENTRÉE MANUELLE DE CODE -->
-    <div class="pairing-complete-input" id="pairingCompleteInput">
-      <p class="text-sm mb-2 text-gray-400">Entrez le code de 8 chiffres donné par WhatsApp sur votre téléphone.</p>
-      <input type="text" id="manualPairingCode" placeholder="Code (XXXX-XXXX)" aria-label="Manual Pairing Code">
-      <button class="btn" id="completePairingBtn" style="margin-top:0.8rem; width:100%;">
-        <i class="fas fa-check"></i> Compléter la connexion
-      </button>
-    </div>
+    <script>
+        async function uploadFichier() {
+            const input = document.getElementById("fichier-input");
+            const statut = document.getElementById("statut");
+            const fichier = input.files[0];
+            if (!fichier) return;
 
-    <div class="display-area" aria-live="polite">
-      <div class="loading" id="loading">
-        <div class="spinner" aria-hidden="true"></div>
-        <p>Chargement...</p>
-      </div>
+            const formData = new FormData();
+            formData.append("fichier", fichier);
 
-      <img src="" alt="QR Code" id="qrcode" />
+            statut.className = "statut visible";
+            statut.textContent = "Chargement en cours...";
 
-      <!-- L'affichage du code interne est maintenant plus clair -->
-      <div id="pairingCode" aria-hidden="true"></div>
-      <button id="simulatePairBtn" class="btn" style="margin-top:10px; display:none; min-width:auto;"><i class="fas fa-check-circle"></i> Simuler la connexion avec ce code</button>
+            const reponse = await fetch("/upload", {
+                method: "POST",
+                body: formData
+            });
 
+            const donnees = await reponse.json();
 
-      <div class="session-id" id="sessionIdDisplay" aria-hidden="true">
-        <span id="sessionIdText"></span>
-        <button class="copy-btn" id="copySessionBtn" title="Copy session id" aria-label="Copy session id">
-          <i class="far fa-copy"></i>
-        </button>
-      </div>
+            if (donnees.erreur) {
+                statut.textContent = "❌ " + donnees.erreur;
+            } else {
+                statut.textContent = "✅ " + donnees.message +
+                    " (" + donnees.mots + " mots)" +
+                    (donnees.tronque ? " — tronqué à 3000 mots" : "");
 
-      <p class="status" id="status">Sélectionnez une méthode de connexion</p>
-    </div>
-
-    <div class="buttons" id="connectionButtons">
-      <button id="qrBtn" class="btn" title="Connect with QR code"><i class="fas fa-qrcode"></i> QR Code</button>
-      <button id="pairingBtn" class="btn" title="Pair with code"><i class="fas fa-mobile-alt"></i> Jumelage (Code)</button>
-    </div>
-
-    <div class="buttons" id="resetButton" style="display:none;">
-      <button id="resetBtn" class="btn btn-reset"><i class="fas fa-sync-alt"></i> Réinitialiser</button>
-    </div>
-  </div>
-
-  <script>
-    // Client-side script (robust, reconnecting WS, compatible with server.js)
-    document.addEventListener('DOMContentLoaded', () => {
-      // Elements
-      const useCustomSession = document.getElementById('useCustomSession');
-      const customSessionInput = document.getElementById('customSessionInput');
-      const sessionIdInput = document.getElementById('sessionId');
-      const qrBtn = document.getElementById('qrBtn');
-      const pairingBtn = document.getElementById('pairingBtn');
-      const resetBtn = document.getElementById('resetBtn');
-      
-      const pairingRequestInput = document.getElementById('pairingRequestInput'); // New: Request phone
-      const phoneNumber = document.getElementById('phoneNumber');
-      const requestPairingCode = document.getElementById('requestPairingCode');
-      
-      const pairingCompleteInput = document.getElementById('pairingCompleteInput'); // New: Enter code
-      const manualPairingCode = document.getElementById('manualPairingCode');
-      const completePairingBtn = document.getElementById('completePairingBtn');
-      
-      const qrcode = document.getElementById('qrcode');
-      const pairingCodeEl = document.getElementById('pairingCode');
-      const simulatePairBtn = document.getElementById('simulatePairBtn'); // New button
-      const loading = document.getElementById('loading');
-      const status = document.getElementById('status');
-      const sessionIdDisplay = document.getElementById('sessionIdDisplay');
-      const sessionIdText = document.getElementById('sessionIdText');
-      const copySessionBtn = document.getElementById('copySessionBtn');
-      const connectionButtons = document.getElementById('connectionButtons');
-      const resetButton = document.getElementById('resetButton');
-      const validationSpinner = document.querySelector('.mini-spinner');
-      const validationMessage = document.querySelector('.validation-message');
-
-      // State
-      let ws = null;
-      let reconnectAttempts = 0;
-      let isSessionValid = false;
-      let currentConnectionType = null;
-      let debounceTimer = null;
-
-      // Build WS url using host (includes port) so it works in dev and prod
-      const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-      const wsUrl = `${protocol}${window.location.host}`; // e.g. wss://example.com or ws://localhost:3000
-
-      // Create and manage websocket with simple backoff reconnection
-      function createWebSocket() {
-        try {
-          ws = new WebSocket(wsUrl);
-        } catch (e) {
-          console.error('WebSocket creation failed', e);
-          setStatus('Impossible de créer le WebSocket', true);
-          scheduleReconnect();
-          return;
-        }
-
-        ws.addEventListener('open', () => {
-          console.log('WebSocket open', wsUrl);
-          reconnectAttempts = 0;
-          setStatus('Connecté au serveur');
-          hideLoading();
-        });
-
-        ws.addEventListener('message', (ev) => {
-          handleWSMessage(ev.data);
-        });
-
-        ws.addEventListener('close', (ev) => {
-          console.warn('WebSocket closed', ev);
-          setStatus('Déconnecté du serveur', true);
-          scheduleReconnect();
-        });
-
-        ws.addEventListener('error', (err) => {
-          console.error('WebSocket error', err);
-          setStatus('Erreur de connexion serveur', true);
-        });
-      }
-
-      function scheduleReconnect() {
-        reconnectAttempts++;
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30_000); // exponential backoff up to 30s
-        console.log(`Reconnecting WS in ${delay} ms`);
-        setTimeout(createWebSocket, delay);
-      }
-
-      // Start WS
-      createWebSocket();
-
-      // Safe send helper
-      function sendIfOpen(obj) {
-        try {
-          if (!ws || ws.readyState !== WebSocket.OPEN) {
-            console.warn('WS not open, cannot send', obj);
-            setStatus('Non connecté au serveur', true);
-            return false;
-          }
-          ws.send(JSON.stringify(obj));
-          return true;
-        } catch (e) {
-          console.error('sendIfOpen error', e);
-          return false;
-        }
-      }
-
-      // Display helpers
-      function setStatus(text, isError = false) {
-        status.textContent = text;
-        status.style.color = isError ? 'var(--danger)' : 'var(--gray)';
-      }
-
-      function showLoading(msg = 'Chargement...') {
-        loading.style.display = 'flex';
-        setStatus(msg);
-      }
-
-      function hideLoading() {
-        loading.style.display = 'none';
-      }
-
-      // Format pairing code XXXX-XXXX for display (server returns 8 chars)
-      function formatPairing(code) {
-        if (!code) return '';
-        const s = code.toString().toUpperCase().replace(/[^A-Z0-9]/g, '');
-        return s.length === 8 ? `${s.slice(0,4)}-${s.slice(4)}` : s;
-      }
-
-      // Handle incoming WS messages
-      function handleWSMessage(raw) {
-        let message;
-        try {
-          message = JSON.parse(raw);
-        } catch (e) {
-          console.error('Invalid JSON from server', raw);
-          return;
-        }
-        console.log('WS message:', message);
-
-        switch (message.type) {
-          case 'info':
-            setStatus(message.message || 'Info');
-            break;
-          case 'qrcode':
-            hideLoading();
-            showQRCode(message.data);
-            break;
-          case 'pairing':
-            hideLoading();
-            showPairingCode(message.data);
-            break;
-          case 'session':
-            // show session id
-            sessionIdText.textContent = message.session || '';
-            sessionIdDisplay.classList.add('active');
-            break;
-          case 'session_validation':
-            handleSessionValidation(message);
-            break;
-          case 'connected':
-            setStatus('Connexion réussie !');
-            // optionally show session
-            if (message.session) {
-              sessionIdText.textContent = message.session;
-              sessionIdDisplay.classList.add('active');
+                document.getElementById("boite-chat").innerHTML = `
+                    <div class="message-ia">
+                        <span>Document chargé ! Pose-moi n'importe quelle question.</span>
+                    </div>`;
             }
-            // hide pairing/qr/inputs as now connected
-            resetDisplay();
-            connectionButtons.style.display = 'none';
-            resetButton.style.display = 'flex';
-            break;
-          case 'disconnected':
-            setStatus('Déconnecté: ' + (message.reason || ''), true);
-            break;
-          case 'error':
-            hideLoading();
-            setStatus(message.message || 'Erreur serveur', true);
-            break;
-          default:
-                        console.warn('Unknown message type', message.type);
-        }
-      }
-
-      // show QR
-      function showQRCode(dataUrl) {
-        pairingCodeEl.classList.remove('show');
-        pairingCodeEl.textContent = '';
-        pairingCodeEl.style.display = 'none';
-        simulatePairBtn.style.display = 'none'; // Hide simulate button
-        pairingCompleteInput.classList.remove('active'); // Hide manual input
-        
-        qrcode.src = dataUrl;
-        qrcode.classList.add('show');
-        qrcode.style.display = 'block';
-        setStatus('📲 Scannez ce QR Code avec WhatsApp');
-      }
-
-      // show pairing code
-      function showPairingCode(code) {
-        qrcode.classList.remove('show');
-        qrcode.src = '';
-        qrcode.style.display = 'none';
-        
-        pairingCodeEl.textContent = formatPairing(code);
-        pairingCodeEl.setAttribute('data-raw', code); // raw code for copy or usage
-        pairingCodeEl.classList.add('show');
-        pairingCodeEl.style.display = 'block';
-        
-        simulatePairBtn.style.display = 'block';
-        pairingCompleteInput.classList.remove('active'); // Hide manual input
-        
-        setStatus('🔑 Code de jumelage INTERNE. Entrez ceci sur un autre client si nécessaire.');
-      }
-
-      // handle session_validation
-      function handleSessionValidation(msg) {
-        if (msg.session !== sessionIdInput.value) return;
-        validationSpinner.style.display = 'none';
-        if (msg.valid) {
-          sessionIdInput.classList.add('input-valid');
-          sessionIdInput.classList.remove('input-invalid');
-          validationMessage.textContent = 'Session valide (Fichier trouvé)';
-          validationMessage.className = 'validation-message validation-success';
-          isSessionValid = true;
-        } else {
-          sessionIdInput.classList.add('input-invalid');
-          sessionIdInput.classList.remove('input-valid');
-          validationMessage.textContent = msg.reason || 'Session non trouvée';
-          validationMessage.className = 'validation-message validation-error';
-          isSessionValid = false;
-        }
-        qrBtn.disabled = !isSessionValid && useCustomSession.checked;
-        pairingBtn.disabled = !isSessionValid && useCustomSession.checked;
-      }
-
-      // ======= UI event wiring =======
-      
-      // Toggle Custom Session Input
-      useCustomSession.addEventListener('change', function() {
-        if (this.checked) {
-          customSessionInput.classList.add('active');
-          if (!sessionIdInput.value.trim()) {
-            sessionIdInput.classList.add('input-invalid');
-            validationMessage.textContent = 'ID de session requis';
-            validationMessage.className = 'validation-message validation-error';
-            isSessionValid = false;
-            qrBtn.disabled = true;
-            pairingBtn.disabled = true;
-          } else {
-            validateSessionId(sessionIdInput.value);
-          }
-        } else {
-          customSessionInput.classList.remove('active');
-          sessionIdInput.classList.remove('input-invalid', 'input-valid');
-          validationMessage.textContent = '';
-          qrBtn.disabled = false;
-          pairingBtn.disabled = false;
-        }
-      });
-
-      // Debounce Session ID validation
-      sessionIdInput.addEventListener('input', function() {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          validateSessionId(this.value);
-        }, 450);
-      });
-
-      // QR Button: Starts QR flow
-      qrBtn.addEventListener('click', () => startConnection('qrcode'));
-      
-      // Pairing Button: Shows request input
-      pairingBtn.addEventListener('click', () => startConnection('pairing'));
-      
-      // Reset Button
-      resetBtn.addEventListener('click', resetAll);
-
-      // Copy Session ID Button
-      copySessionBtn.addEventListener('click', () => {
-        const s = sessionIdText.textContent || '';
-        if (!s) return;
-        document.execCommand('copy'); // Using legacy command for broader iFrame compatibility
-        copySessionBtn.classList.add('copied');
-        copySessionBtn.innerHTML = '<i class="fas fa-check"></i>';
-        setTimeout(() => {
-          copySessionBtn.classList.remove('copied');
-          copySessionBtn.innerHTML = '<i class="far fa-copy"></i>';
-        }, 1800);
-      });
-
-      // Request Pairing Code (sends phone number to server)
-      requestPairingCode.addEventListener('click', () => {
-        const phone = (phoneNumber.value || '').trim();
-        if (!/^\d{8,15}$/.test(phone)) {
-          setStatus('❌ Numéro invalide (8-15 chiffres sans préfixe)', true);
-          phoneNumber.classList.add('input-invalid');
-          return;
-        }
-        phoneNumber.classList.remove('input-invalid');
-        showLoading('Génération du Code de Jumelage...');
-        const ok = sendIfOpen({
-          type: 'request',
-          content: 'pairing',
-          data: { phoneNumber: phone, customSession: useCustomSession.checked ? (sessionIdInput.value || '').trim() : null }
-        });
-        if (!ok) hideLoading();
-        else {
-          // Hide request input, show code/simulate area
-          pairingRequestInput.classList.remove('active');
-        }
-      });
-      
-      // Complete Pairing Button (manual code input)
-      completePairingBtn.addEventListener('click', () => {
-        const rawCode = (manualPairingCode.value || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-        if (rawCode.length !== 8) {
-             setStatus('❌ Le code doit être composé de 8 caractères alphanumériques.', true);
-             manualPairingCode.classList.add('input-invalid');
-             return;
-        }
-        manualPairingCode.classList.remove('input-invalid');
-        showLoading('Envoi du code de jumelage au serveur...');
-        const ok = sendIfOpen({ type: 'complete_pairing', pairingCode: String(rawCode) });
-        if (!ok) hideLoading();
-      });
-      
-      // Simulate Complete Pairing Button (uses the internal generated code)
-      simulatePairBtn.addEventListener('click', () => {
-        const raw = pairingCodeEl.getAttribute('data-raw');
-        if (!raw) { setStatus('Aucun code de jumelage interne disponible', true); return; }
-        showLoading('Simulation de connexion en cours...');
-        const ok = sendIfOpen({ type: 'complete_pairing', pairingCode: String(raw) });
-        if (!ok) hideLoading();
-      });
-
-      // Validate session id (client -> server)
-      function validateSessionId(sessionId) {
-        qrBtn.disabled = true;
-        pairingBtn.disabled = true;
-        validationSpinner.style.display = 'none';
-
-        if (!useCustomSession.checked) {
-          sessionIdInput.classList.remove('input-valid', 'input-invalid');
-          validationMessage.textContent = '';
-          isSessionValid = false;
-          qrBtn.disabled = false;
-          pairingBtn.disabled = false;
-          return;
         }
 
-        if (!sessionId || !sessionId.trim()) {
-          // ... error state
-          return;
+        async function poserQuestion() {
+            const input = document.getElementById("input-question");
+            const boite = document.getElementById("boite-chat");
+            const question = input.value.trim();
+            if (!question) return;
+
+            boite.innerHTML += `
+                <div class="message-user">
+                    <span>${question}</span>
+                </div>`;
+            input.value = "";
+
+            boite.innerHTML += `
+                <div class="message-ia" id="en-cours">
+                    <span>⏳ Analyse en cours...</span>
+                </div>`;
+            boite.scrollTop = boite.scrollHeight;
+
+            const reponse = await fetch("/question", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({question: question})
+            });
+
+            const donnees = await reponse.json();
+
+            document.getElementById("en-cours").remove();
+
+            boite.innerHTML += `
+                <div class="message-ia">
+                    <span>${donnees.erreur || donnees.reponse}</span>
+                </div>`;
+            boite.scrollTop = boite.scrollHeight;
         }
 
-        sessionIdInput.classList.remove('input-valid', 'input-invalid');
-        validationSpinner.style.display = 'inline-block';
-        validationMessage.textContent = 'Validation...';
-        validationMessage.className = 'validation-message';
-
-        // send validate_session to server
-        sendIfOpen({ type: 'validate_session', sessionId: sessionId });
-      }
-
-      // Start connection flow (qr or pairing)
-      function startConnection(type) {
-        // If custom session selected, require validation
-        if (useCustomSession.checked && (!isSessionValid || !sessionIdInput.value.trim())) {
-          setStatus('Veuillez entrer une session valide', true);
-          sessionIdInput.classList.add('input-invalid');
-          validationMessage.textContent = 'Session invalide';
-          validationMessage.className = 'validation-message validation-error';
-          sessionIdInput.focus();
-          return;
-        }
-
-        // reset UI
-        resetDisplay();
-        currentConnectionType = type;
-        connectionButtons.style.display = 'none';
-        resetButton.style.display = 'flex';
-
-        if (type === 'qrcode') {
-          pairingRequestInput.classList.remove('active');
-          pairingCompleteInput.classList.remove('active');
-          showLoading('Génération du QR Code...');
-          sendIfOpen({
-            type: 'request',
-            content: 'qrcode',
-            data: { customSession: useCustomSession.checked ? sessionIdInput.value.trim() : null }
-          });
-        } else if (type === 'pairing') {
-          pairingRequestInput.classList.add('active');
-          pairingCompleteInput.classList.add('active');
-          setStatus('Choisissez : Générer un code (téléphone du bot) ou Entrer un code (reçu sur l’interface)');
-        }
-      }
-
-      // Reset display (hide qrcode / pairing / session)
-      function resetDisplay() {
-        qrcode.classList.remove('show');
-        qrcode.src = '';
-        qrcode.style.display = 'none';
-
-        pairingCodeEl.classList.remove('show');
-        pairingCodeEl.textContent = '';
-        pairingCodeEl.style.display = 'none';
-
-        simulatePairBtn.style.display = 'none';
-
-        sessionIdDisplay.classList.remove('active');
-        
-        pairingRequestInput.classList.remove('active');
-        pairingCompleteInput.classList.remove('active');
-      }
-
-      // Reset all (UI + send cancel to server)
-      function resetAll() {
-        resetDisplay();
-        useCustomSession.checked = false;
-        customSessionInput.classList.remove('active');
-        sessionIdInput.value = '';
-        sessionIdInput.classList.remove('input-valid', 'input-invalid');
-        phoneNumber.value = '';
-        manualPairingCode.value = '';
-        connectionButtons.style.display = 'flex';
-        resetButton.style.display = 'none';
-        setStatus('Sélectionnez une méthode de connexion');
-        currentConnectionType = null;
-
-        validationSpinner.style.display = 'none';
-        validationMessage.textContent = '';
-        validationMessage.className = 'validation-message';
-
-        qrBtn.disabled = false;
-        pairingBtn.disabled = false;
-
-        sendIfOpen({ type: 'cancel' });
-      }
-
-      // initial status
-      setStatus('Sélectionnez une méthode de connexion');
-    });
-  </script>
+        document.getElementById("input-question")
+            .addEventListener("keypress", function(e) {
+                if (e.key === "Enter") poserQuestion();
+            });
+    </script>
 </body>
 </html>
